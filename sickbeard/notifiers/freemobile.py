@@ -3,7 +3,7 @@
 # Author: Marvin Pinto <me@marvinp.ca>
 # Author: Dennis Lutter <lad1337@gmail.com>
 # Author: Aaron Bieber <deftly@gmail.com>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -19,14 +19,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
-import urllib2
+
+from __future__ import print_function, unicode_literals
+
+import six
+from six.moves import urllib
 
 import sickbeard
 from sickbeard import logger
-from sickbeard.common import notifyStrings, NOTIFY_SNATCH, NOTIFY_DOWNLOAD, NOTIFY_SUBTITLE_DOWNLOAD, NOTIFY_GIT_UPDATE, NOTIFY_GIT_UPDATE_TEXT
+from sickbeard.common import (NOTIFY_DOWNLOAD, NOTIFY_GIT_UPDATE, NOTIFY_GIT_UPDATE_TEXT, NOTIFY_LOGIN, NOTIFY_LOGIN_TEXT, NOTIFY_SNATCH,
+                              NOTIFY_SUBTITLE_DOWNLOAD, notifyStrings)
 
 
-class FreeMobileNotifier(object):
+class Notifier(object):
     def test_notify(self, cust_id=None, apiKey=None):
         return self._notifyFreeMobile('Test', "This is a test notification from SickRage", cust_id, apiKey, force=True)
 
@@ -34,7 +39,7 @@ class FreeMobileNotifier(object):
         """
         Sends a SMS notification
 
-        msg: The message to send (unicode)
+        msg: The message to send (six.text_type)
         title: The title of the message
         userKey: The pushover user id to send the message to (or to subscribe with)
 
@@ -46,17 +51,17 @@ class FreeMobileNotifier(object):
         if apiKey is None:
             apiKey = sickbeard.FREEMOBILE_APIKEY
 
-        logger.log(u"Free Mobile in use with API KEY: " + apiKey, logger.DEBUG)
+        logger.log("Free Mobile in use with API KEY: " + apiKey, logger.DEBUG)
 
         # build up the URL and parameters
         msg = msg.strip()
-        msg_quoted = urllib2.quote(title.encode('utf-8') + ": " + msg.encode('utf-8'))
+        msg_quoted = urllib.parse.quote(title.encode('utf-8') + ": " + msg.encode('utf-8'))
         URL = "https://smsapi.free-mobile.fr/sendmsg?user=" + cust_id + "&pass=" + apiKey + "&msg=" + msg_quoted
 
-        req = urllib2.Request(URL)
+        req = urllib.request.Request(URL)
         # send the request to Free Mobile
         try:
-            urllib2.urlopen(req)
+            urllib.request.urlopen(req)
         except IOError as e:
             if hasattr(e, 'code'):
                 if e.code == 400:
@@ -76,9 +81,9 @@ class FreeMobileNotifier(object):
                     logger.log(message, logger.ERROR)
                     return False, message
         except Exception as e:
-                message = u"Error while sending SMS: {0}".format(e)
-                logger.log(message, logger.ERROR)
-                return False, message
+            message = "Error while sending SMS: {0}".format(e)
+            logger.log(message, logger.ERROR)
+            return False, message
 
         message = "Free Mobile SMS successful."
         logger.log(message, logger.INFO)
@@ -104,11 +109,11 @@ class FreeMobileNotifier(object):
 
     def notify_login(self, ipaddress=""):
         if sickbeard.USE_FREEMOBILE:
-            update_text = common.notifyStrings[common.NOTIFY_LOGIN_TEXT]
-            title = common.notifyStrings[common.NOTIFY_LOGIN]
+            update_text = notifyStrings[NOTIFY_LOGIN_TEXT]
+            title = notifyStrings[NOTIFY_LOGIN]
             self._notifyFreeMobile(title, update_text.format(ipaddress))
 
-    def _notifyFreeMobile(self, title, message, cust_id=None, apiKey=None, force=False):
+    def _notifyFreeMobile(self, title, message, cust_id=None, apiKey=None, force=False):  # pylint: disable=too-many-arguments
         """
         Sends a SMS notification
 
@@ -120,12 +125,9 @@ class FreeMobileNotifier(object):
         """
 
         if not sickbeard.USE_FREEMOBILE and not force:
-            logger.log(u"Notification for Free Mobile not enabled, skipping this notification", logger.DEBUG)
+            logger.log("Notification for Free Mobile not enabled, skipping this notification", logger.DEBUG)
             return False, "Disabled"
 
-        logger.log(u"Sending a SMS for " + message, logger.DEBUG)
+        logger.log("Sending a SMS for " + message, logger.DEBUG)
 
         return self._sendFreeMobileSMS(title, message, cust_id, apiKey)
-
-
-notifier = FreeMobileNotifier

@@ -1,7 +1,7 @@
 # coding=utf-8
 # Author: The SickRage Dev Team
+#
 # URL: https://sickrage.github.io
-# Repository: https://github.com/SickRage/SickRage.git
 #
 # This file is part of SickRage.
 #
@@ -18,6 +18,8 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import unicode_literals
+
 from bs4 import BeautifulSoup
 
 
@@ -29,5 +31,6 @@ class BS4Parser(object):
         return self.soup
 
     def __exit__(self, exc_ty, exc_val, tb):
+        _ = exc_ty, exc_val, tb  # Throw away unused values
         self.soup.clear(True)
         self.soup = None

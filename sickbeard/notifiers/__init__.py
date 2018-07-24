@@ -1,7 +1,7 @@
 # coding=utf-8
 
-# Author: Nic Wolfe <nic@wolfeden.ca>
-# URL: http://code.google.com/p/sickbeard/
+# Author: Dustyn Gibson <miigotu@gmail.com>
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,56 +18,41 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
 
-import kodi
-import plex
-import emby
-import nmj
-import nmjv2
-import synoindex
-import synologynotifier
-import pytivo
-
-import growl
-import prowl
-from . import libnotify
-import pushover
-import boxcar2
-import nma
-import pushalot
-import pushbullet
-import freemobile
-import telegram
-
-
-import tweet
-import trakt
-import emailnotify
+import sickbeard
+from sickbeard.notifiers import (boxcar2, discord, emailnotify, emby, freemobile, growl, join, kodi, libnotify, nma, nmj, nmjv2, plex, prowl, pushalot,
+                                 pushbullet, pushover, pytivo, slack, synoindex, synologynotifier, telegram, trakt, tweet, twilio_notify)
 
 # home theater / nas
-kodi_notifier = kodi.KODINotifier()
-plex_notifier = plex.PLEXNotifier()
-emby_notifier = emby.EMBYNotifier()
-nmj_notifier = nmj.NMJNotifier()
-nmjv2_notifier = nmjv2.NMJv2Notifier()
-synoindex_notifier = synoindex.synoIndexNotifier()
-synology_notifier = synologynotifier.synologyNotifier()
-pytivo_notifier = pytivo.pyTivoNotifier()
+kodi_notifier = kodi.Notifier()
+plex_notifier = plex.Notifier()
+emby_notifier = emby.Notifier()
+nmj_notifier = nmj.Notifier()
+nmjv2_notifier = nmjv2.Notifier()
+synoindex_notifier = synoindex.Notifier()
+synology_notifier = synologynotifier.Notifier()
+pytivo_notifier = pytivo.Notifier()
+
 # devices
-growl_notifier = growl.GrowlNotifier()
-prowl_notifier = prowl.ProwlNotifier()
-libnotify_notifier = libnotify.LibnotifyNotifier()
-pushover_notifier = pushover.PushoverNotifier()
-boxcar2_notifier = boxcar2.Boxcar2Notifier()
-nma_notifier = nma.NMA_Notifier()
-pushalot_notifier = pushalot.PushalotNotifier()
-pushbullet_notifier = pushbullet.PushbulletNotifier()
-freemobile_notifier = freemobile.FreeMobileNotifier()
-telegram_notifier = telegram.TelegramNotifier()
+growl_notifier = growl.Notifier()
+prowl_notifier = prowl.Notifier()
+libnotify_notifier = libnotify.Notifier()
+pushover_notifier = pushover.Notifier()
+boxcar2_notifier = boxcar2.Notifier()
+nma_notifier = nma.Notifier()
+pushalot_notifier = pushalot.Notifier()
+pushbullet_notifier = pushbullet.Notifier()
+freemobile_notifier = freemobile.Notifier()
+telegram_notifier = telegram.Notifier()
+join_notifier = join.Notifier()
 # social
-twitter_notifier = tweet.TwitterNotifier()
-trakt_notifier = trakt.TraktNotifier()
-email_notifier = emailnotify.EmailNotifier()
+twitter_notifier = tweet.Notifier()
+twilio_notifier = twilio_notify.Notifier()
+trakt_notifier = trakt.Notifier()
+email_notifier = emailnotify.Notifier()
+slack_notifier = slack.Notifier()
+discord_notifier = discord.Notifier()
 
 notifiers = [
     libnotify_notifier,  # Libnotify notifier goes first because it doesn't involve blocking on network activity.
@@ -88,8 +73,12 @@ notifiers = [
     pushalot_notifier,
     pushbullet_notifier,
     twitter_notifier,
+    twilio_notifier,
     trakt_notifier,
     email_notifier,
+    slack_notifier,
+    discord_notifier,
+    join_notifier,
 ]
 
 
@@ -109,10 +98,18 @@ def notify_snatch(ep_name):
 
 
 def notify_git_update(new_version=""):
-    for n in notifiers:
-        n.notify_git_update(new_version)
+    if sickbeard.NOTIFY_ON_UPDATE:
+        for n in notifiers:
+            if hasattr(n, 'notify_git_update'):
+                n.notify_git_update(new_version)
+            else:
+                print(n.__module__)
 
 
 def notify_login(ipaddress):
-    for n in notifiers:
-        n.notify_login(ipaddress)
+    if sickbeard.NOTIFY_ON_LOGIN and not sickbeard.helpers.is_ip_private(ipaddress):
+        for n in notifiers:
+            if hasattr(n, 'notify_login'):
+                n.notify_login(ipaddress)
+            else:
+                print(n.__module__)

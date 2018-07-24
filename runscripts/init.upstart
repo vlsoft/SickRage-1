@@ -17,6 +17,10 @@ stop on runlevel [!2345]
 
 kill timeout 30
 
+# Setting the environment locale. 
+# You don't need to change this regardless of your language, but if you do, use a language in UTF-8
+env LANG=en_US.UTF-8
+
 setuid sickrage
 setgid sickrage
 
@@ -30,7 +34,5 @@ script
         echo "/etc/default/sickrage not found using default settings.";
     fi
 
-    [ -z $SR_HOME ] && echo "I can't start SickRage if I don't know where it is"
-
-    exec ${SR_HOME}/SickBeard.py -q --nolaunch --datadir=${SR_DATA-SR_HOME} ${SR_OPTS-}
+    exec ${SR_HOME-/opt/sickrage}/SickBeard.py -q --nolaunch --datadir=${SR_DATA-/opt/sickrage} ${SR_OPTS-}
 end script

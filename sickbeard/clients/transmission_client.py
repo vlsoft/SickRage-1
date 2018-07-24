@@ -1,7 +1,7 @@
 # coding=utf-8
 
 # Author: Mr_Orange <mr_orange@hotmail.it>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,8 +18,10 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
-import re
+from __future__ import unicode_literals
+
 import json
+import re
 from base64 import b64encode
 
 import sickbeard
@@ -30,17 +32,7 @@ class TransmissionAPI(GenericClient):
     def __init__(self, host=None, username=None, password=None):
 
         super(TransmissionAPI, self).__init__('Transmission', host, username, password)
-
-        if not self.host.endswith('/'):
-            self.host += '/'
-
-        if self.rpcurl.startswith('/'):
-            self.rpcurl = self.rpcurl[1:]
-
-        if self.rpcurl.endswith('/'):
-            self.rpcurl = self.rpcurl[:-1]
-
-        self.url = self.host + self.rpcurl + '/rpc'
+        self.url = '/'.join((self.host.rstrip('/'), sickbeard.TORRENT_RPCURL.strip('/'), 'rpc'))
 
     def _get_auth(self):
 
@@ -65,9 +57,13 @@ class TransmissionAPI(GenericClient):
 
     def _add_torrent_uri(self, result):
 
-        arguments = {'filename': result.url,
-                     'paused': 1 if sickbeard.TORRENT_PAUSED else 0,
-                     'download-dir': sickbeard.TORRENT_PATH}
+        arguments = {
+            'filename': result.url,
+            'paused': int(sickbeard.TORRENT_PAUSED)
+        }
+
+        if sickbeard.TORRENT_PATH:
+            arguments['download-dir'] = sickbeard.TORRENT_PATH
 
         post_data = json.dumps({'arguments': arguments,
                                 'method': 'torrent-add'})
@@ -78,9 +74,13 @@ class TransmissionAPI(GenericClient):
 
     def _add_torrent_file(self, result):
 
-        arguments = {'metainfo': b64encode(result.content),
-                     'paused': 1 if sickbeard.TORRENT_PAUSED else 0,
-                     'download-dir': sickbeard.TORRENT_PATH}
+        arguments = {
+            'metainfo': b64encode(result.content),
+            'paused': 1 if sickbeard.TORRENT_PAUSED else 0
+        }
+
+        if sickbeard.TORRENT_PATH:
+            arguments['download-dir'] = sickbeard.TORRENT_PATH
 
         post_data = json.dumps({'arguments': arguments,
                                 'method': 'torrent-add'})

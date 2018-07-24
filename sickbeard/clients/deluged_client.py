@@ -5,12 +5,15 @@
 # This client script allows connection to Deluge Daemon directly, completely
 # circumventing the requirement to use the WebUI.
 
+from __future__ import print_function, unicode_literals
+
 from base64 import b64encode
+
+from synchronousdeluge import DelugeClient
 
 import sickbeard
 from sickbeard import logger
 from sickbeard.clients.generic import GenericClient
-from synchronousdeluge import DelugeClient
 
 
 class DelugeDAPI(GenericClient):
@@ -76,11 +79,11 @@ class DelugeDAPI(GenericClient):
 
     def _set_torrent_label(self, result):
 
-        label = sickbeard.TORRENT_LABEL
+        label = sickbeard.TORRENT_LABEL.lower()
         if result.show.is_anime:
-            label = sickbeard.TORRENT_LABEL_ANIME
+            label = sickbeard.TORRENT_LABEL_ANIME.lower()
         if ' ' in label:
-            logger.log(self.name + u': Invalid label. Label must not contain a space', logger.ERROR)
+            logger.log(self.name + ': Invalid label. Label must not contain a space', logger.ERROR)
             return False
 
         if label:
@@ -99,14 +102,11 @@ class DelugeDAPI(GenericClient):
         return True
 
     def _set_torrent_path(self, result):
-
-        path = sickbeard.TORRENT_PATH
-        if path:
-            return self.drpc.set_torrent_path(result.hash, path)
+        if sickbeard.TORRENT_PATH:
+            return self.drpc.set_torrent_path(result.hash, sickbeard.TORRENT_PATH)
         return True
 
     def _set_torrent_pause(self, result):
-
         if sickbeard.TORRENT_PAUSED:
             return self.drpc.pause_torrent(result.hash)
         return True
@@ -149,7 +149,7 @@ class DelugeRPC(object):
         torrent_id = False
         try:
             self.connect()
-            torrent_id = self.client.core.add_torrent_magnet(torrent, options).get()
+            torrent_id = self.client.core.add_torrent_magnet(torrent, options).get()  # pylint:disable=no-member
             if not torrent_id:
                 torrent_id = self._check_torrent(torrent_hash)
         except Exception:
@@ -164,7 +164,7 @@ class DelugeRPC(object):
         torrent_id = False
         try:
             self.connect()
-            torrent_id = self.client.core.add_torrent_file(filename, b64encode(torrent), options).get()
+            torrent_id = self.client.core.add_torrent_file(filename, b64encode(torrent), options).get()  # pylint:disable=no-member
             if not torrent_id:
                 torrent_id = self._check_torrent(torrent_hash)
         except Exception:
@@ -178,9 +178,13 @@ class DelugeRPC(object):
     def set_torrent_label(self, torrent_id, label):
         try:
             self.connect()
-            self.client.label.set_torrent(torrent_id, label).get()
+            self.client.label.set_torrent(torrent_id, label).get()  # pylint:disable=no-member
         except Exception:
-            return False
+            try:
+                self.connect()
+                self.client.labelplus.set_torrent_labels([torrent_id], label).get() # pylint:disable=no-member
+            except Exception:
+                return False
         finally:
             if self.client:
                 self.disconnect()
@@ -189,8 +193,8 @@ class DelugeRPC(object):
     def set_torrent_path(self, torrent_id, path):
         try:
             self.connect()
-            self.client.core.set_torrent_move_completed_path(torrent_id, path).get()
-            self.client.core.set_torrent_move_completed(torrent_id, 1).get()
+            self.client.core.set_torrent_move_completed_path(torrent_id, path).get()  # pylint:disable=no-member
+            self.client.core.set_torrent_move_completed(torrent_id, 1).get()  # pylint:disable=no-member
         except Exception:
             return False
         finally:
@@ -202,8 +206,8 @@ class DelugeRPC(object):
         try:
             self.connect()
             if priority:
-                self.client.core.queue_top([torrent_ids]).get()
-        except Exception, err:
+                self.client.core.queue_top([torrent_ids]).get()  # pylint:disable=no-member
+        except Exception:
             return False
         finally:
             if self.client:
@@ -213,9 +217,9 @@ class DelugeRPC(object):
     def set_torrent_ratio(self, torrent_ids, ratio):
         try:
             self.connect()
-            self.client.core.set_torrent_stop_at_ratio(torrent_ids, True).get()
-            self.client.core.set_torrent_stop_ratio(torrent_ids, ratio).get()
-        except Exception, err:
+            self.client.core.set_torrent_stop_at_ratio(torrent_ids, True).get()  # pylint:disable=no-member
+            self.client.core.set_torrent_stop_ratio(torrent_ids, ratio).get()  # pylint:disable=no-member
+        except Exception:
             return False
         finally:
             if self.client:
@@ -225,7 +229,7 @@ class DelugeRPC(object):
     def pause_torrent(self, torrent_ids):
         try:
             self.connect()
-            self.client.core.pause_torrent(torrent_ids).get()
+            self.client.core.pause_torrent(torrent_ids).get()  # pylint:disable=no-member
         except Exception:
             return False
         finally:
@@ -237,9 +241,9 @@ class DelugeRPC(object):
         self.client.disconnect()
 
     def _check_torrent(self, torrent_hash):
-        torrent_id = self.client.core.get_torrent_status(torrent_hash, {}).get()
+        torrent_id = self.client.core.get_torrent_status(torrent_hash, {}).get()  # pylint:disable=no-member
         if torrent_id['hash']:
-            logger.log(u'DelugeD: Torrent already exists in Deluge', logger.DEBUG)
+            logger.log('DelugeD: Torrent already exists in Deluge', logger.DEBUG)
             return torrent_hash
         return False
 

@@ -18,19 +18,19 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import unicode_literals
+
 import datetime
 import os
 
 import sickbeard
-from sickbeard import tv
-from sickbeard import common
-from sickbeard import logger
-from sickbeard.name_parser.parser import NameParser
-from sickbeard.common import Quality, DOWNLOADED
-
+from sickbeard import common, logger, tv
+from sickbeard.common import DOWNLOADED, Quality
+from sickbeard.name_parser.parser import InvalidNameException, InvalidShowException, NameParser
 from sickrage.helper.encoding import ek
 
 name_presets = (
+    '%SN - %Sx%0E',
     '%SN - %Sx%0E - %EN',
     '%S.N.S%0SE%0E.%E.N',
     '%Sx%0E - %EN',
@@ -57,51 +57,39 @@ class TVShow(object):
     def __init__(self):
         self.name = "Show Name"
         self.genre = "Comedy"
-        self.indexerid = 00001
+        self.indexerid = 1
         self.air_by_date = 0
         self.sports = 0
         self.anime = 0
         self.scene = 0
 
-    def _is_anime(self):
+    @property
+    def is_anime(self):
         """
         Find out if show is anime
         :return: True if show is anime, False if not
         """
-        if self.anime > 0:
-            return True
-        else:
-            return False
+        return self.anime > 0
 
-    is_anime = property(_is_anime)
-
-    def _is_sports(self):
+    @property
+    def is_sports(self):
         """
         Find out if show is sports
         :return: True if show is sports, False if not
         """
-        if self.sports > 0:
-            return True
-        else:
-            return False
+        return self.sports > 0
 
-    is_sports = property(_is_sports)
-
-    def _is_scene(self):
+    @property
+    def is_scene(self):
         """
         Find out if show is scene numbering
         :return: True if show is scene numbering, False if not
         """
-        if self.scene > 0:
-            return True
-        else:
-            return False
-
-    is_scene = property(_is_scene)
+        return self.scene > 0
 
 
-class TVEpisode(tv.TVEpisode):
-    def __init__(self, season, episode, absolute_number, name):
+class TVEpisode(tv.TVEpisode):  # pylint: disable=too-many-instance-attributes
+    def __init__(self, season, episode, absolute_number, name):  # pylint: disable=super-init-not-called
         self.relatedEps = []
         self._name = name
         self._season = season
@@ -150,11 +138,11 @@ def check_valid_naming(pattern=None, multi=None, anime_type=None):
     if anime_type is None:
         anime_type = sickbeard.NAMING_ANIME
 
-    logger.log(u"Checking whether the pattern " + pattern + " is valid for a single episode", logger.DEBUG)
+    logger.log("Checking whether the pattern " + pattern + " is valid for a single episode", logger.DEBUG)
     valid = validate_name(pattern, None, anime_type)
 
     if multi is not None:
-        logger.log(u"Checking whether the pattern " + pattern + " is valid for a multi episode", logger.DEBUG)
+        logger.log("Checking whether the pattern " + pattern + " is valid for a multi episode", logger.DEBUG)
         valid = valid and validate_name(pattern, multi, anime_type)
 
     return valid
@@ -169,7 +157,7 @@ def check_valid_abd_naming(pattern=None):
     if pattern is None:
         pattern = sickbeard.NAMING_PATTERN
 
-    logger.log(u"Checking whether the pattern " + pattern + " is valid for an air-by-date episode", logger.DEBUG)
+    logger.log("Checking whether the pattern " + pattern + " is valid for an air-by-date episode", logger.DEBUG)
     valid = validate_name(pattern, abd=True)
 
     return valid
@@ -184,13 +172,14 @@ def check_valid_sports_naming(pattern=None):
     if pattern is None:
         pattern = sickbeard.NAMING_PATTERN
 
-    logger.log(u"Checking whether the pattern " + pattern + " is valid for an sports episode", logger.DEBUG)
+    logger.log("Checking whether the pattern " + pattern + " is valid for an sports episode", logger.DEBUG)
     valid = validate_name(pattern, sports=True)
 
     return valid
 
 
-def validate_name(pattern, multi=None, anime_type=None, file_only=False, abd=False, sports=False):
+def validate_name(pattern, multi=None, anime_type=None,  # pylint: disable=too-many-arguments, too-many-return-statements
+                  file_only=False, abd=False, sports=False):
     """
     See if we understand a name
 
@@ -205,40 +194,38 @@ def validate_name(pattern, multi=None, anime_type=None, file_only=False, abd=Fal
     ep = generate_sample_ep(multi, abd, sports, anime_type)
 
     new_name = ep.formatted_filename(pattern, multi, anime_type) + '.ext'
-    new_path = ep.formatted_dir(pattern, multi)
+    new_path = ep.formatted_dir(pattern, multi, anime_type)
     if not file_only:
         new_name = ek(os.path.join, new_path, new_name)
 
     if not new_name:
-        logger.log(u"Unable to create a name out of " + pattern, logger.DEBUG)
+        logger.log("Unable to create a name out of " + pattern, logger.DEBUG)
         return False
 
-    logger.log(u"Trying to parse " + new_name, logger.DEBUG)
-
-    parser = NameParser(True, showObj=ep.show, naming_pattern=True)
+    logger.log("Trying to parse " + new_name, logger.DEBUG)
 
     try:
-        result = parser.parse(new_name)
-    except Exception:
-        logger.log(u"Unable to parse " + new_name + ", not valid", logger.DEBUG)
+        result = NameParser(True, showObj=ep.show, naming_pattern=True).parse(new_name)
+    except (InvalidNameException, InvalidShowException) as error:
+        logger.log("{0}".format(error), logger.DEBUG)
         return False
 
-    logger.log(u"The name " + new_name + " parsed into " + str(result), logger.DEBUG)
+    logger.log("The name " + new_name + " parsed into " + str(result), logger.DEBUG)
 
     if abd or sports:
         if result.air_date != ep.airdate:
-            logger.log(u"Air date incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
+            logger.log("Air date incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
             return False
     elif anime_type != 3:
         if len(result.ab_episode_numbers) and result.ab_episode_numbers != [x.absolute_number for x in [ep] + ep.relatedEps]:
-            logger.log(u"Absolute numbering incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
+            logger.log("Absolute numbering incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
             return False
     else:
         if result.season_number != ep.season:
-            logger.log(u"Season number incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
+            logger.log("Season number incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
             return False
         if result.episode_numbers != [x.episode for x in [ep] + ep.relatedEps]:
-            logger.log(u"Episode numbering incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
+            logger.log("Episode numbering incorrect in parsed episode, pattern isn't valid", logger.DEBUG)
             return False
 
     return True
@@ -248,6 +235,7 @@ def generate_sample_ep(multi=None, abd=False, sports=False, anime_type=None):
     # make a fake episode object
     ep = TVEpisode(2, 3, 3, "Ep Name")
 
+    # pylint: disable=protected-access
     ep._status = Quality.compositeStatus(DOWNLOADED, Quality.HDTV)
     ep._airdate = datetime.date(2011, 3, 9)
 
@@ -297,4 +285,4 @@ def generate_sample_ep(multi=None, abd=False, sports=False, anime_type=None):
 def test_name(pattern, multi=None, abd=False, sports=False, anime_type=None):
     ep = generate_sample_ep(multi, abd, sports, anime_type)
 
-    return {'name': ep.formatted_filename(pattern, multi, anime_type), 'dir': ep.formatted_dir(pattern, multi)}
+    return {'name': ep.formatted_filename(pattern, multi, anime_type), 'dir': ep.formatted_dir(pattern, multi, anime_type)}

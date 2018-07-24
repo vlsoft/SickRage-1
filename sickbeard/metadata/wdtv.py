@@ -1,7 +1,7 @@
 # coding=utf-8
 
 # Author: Nic Wolfe <nic@wolfeden.ca>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,15 +18,15 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import datetime
 import os
 import re
 
 import sickbeard
-
+from sickbeard import helpers, logger
 from sickbeard.metadata import generic
-
-from sickbeard import logger, helpers
 from sickrage.helper.common import dateFormat, replace_extension
 from sickrage.helper.encoding import ek
 from sickrage.helper.exceptions import ex, ShowNotFoundException
@@ -167,10 +167,10 @@ class WDTVMetadata(generic.GenericMetadata):
                 break
 
         if not season_dir:
-            logger.log(u"Unable to find a season dir for season " + str(season), logger.DEBUG)
+            logger.log("Unable to find a season dir for season " + str(season), logger.DEBUG)
             return None
 
-        logger.log(u"Using " + str(season_dir) + "/folder.jpg as season dir for season " + str(season), logger.DEBUG)
+        logger.log("Using " + str(season_dir) + "/folder.jpg as season dir for season " + str(season), logger.DEBUG)
 
         return ek(os.path.join, show_obj.location, season_dir, 'folder.jpg')
 
@@ -191,10 +191,9 @@ class WDTVMetadata(generic.GenericMetadata):
 
             lINDEXER_API_PARMS['actors'] = True
 
-            if indexer_lang and not indexer_lang == sickbeard.INDEXER_DEFAULT_LANGUAGE:
-                lINDEXER_API_PARMS['language'] = indexer_lang
+            lINDEXER_API_PARMS['language'] = indexer_lang or sickbeard.INDEXER_DEFAULT_LANGUAGE
 
-            if ep_obj.show.dvdorder != 0:
+            if ep_obj.show.dvdorder:
                 lINDEXER_API_PARMS['dvdorder'] = True
 
             t = sickbeard.indexerApi(ep_obj.show.indexer).indexer(**lINDEXER_API_PARMS)
@@ -202,7 +201,7 @@ class WDTVMetadata(generic.GenericMetadata):
         except sickbeard.indexer_shownotfound as e:
             raise ShowNotFoundException(e.message)
         except sickbeard.indexer_error as e:
-            logger.log(u"Unable to connect to " + sickbeard.indexerApi(
+            logger.log("Unable to connect to " + sickbeard.indexerApi(
                 ep_obj.show.indexer).name + " while creating meta files - skipping - " + ex(e), logger.ERROR)
             return False
 
@@ -214,8 +213,10 @@ class WDTVMetadata(generic.GenericMetadata):
             try:
                 myEp = myShow[curEpToWrite.season][curEpToWrite.episode]
             except (sickbeard.indexer_episodenotfound, sickbeard.indexer_seasonnotfound):
-                logger.log(u"Unable to find episode %dx%d on %s... has it been removed? Should I delete from db?" %
-                           (curEpToWrite.season, curEpToWrite.episode, sickbeard.indexerApi(ep_obj.show.indexer).name))
+                logger.log("Metadata writer is unable to find episode {0:d}x{1:d} of {2} on {3}..."
+                           "has it been removed? Should I delete from db?".format(
+                    curEpToWrite.season, curEpToWrite.episode, curEpToWrite.show.name,
+                    sickbeard.indexerApi(ep_obj.show.indexer).name))
                 return None
 
             if ep_obj.season == 0 and not getattr(myEp, 'firstaired', None):
@@ -234,7 +235,7 @@ class WDTVMetadata(generic.GenericMetadata):
             episodeID.text = str(curEpToWrite.indexerid)
 
             title = etree.SubElement(episode, "title")
-            title.text = ep_obj.prettyName()
+            title.text = ep_obj.pretty_name()
 
             if getattr(myShow, 'seriesname', None):
                 seriesName = etree.SubElement(episode, "series_name")

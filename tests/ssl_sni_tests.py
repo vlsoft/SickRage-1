@@ -23,6 +23,8 @@
 Test SNI and SSL
 """
 
+from __future__ import print_function, unicode_literals
+
 import os.path
 import sys
 import unittest
@@ -36,33 +38,33 @@ import requests  # pylint: disable=import-error
 import sickbeard.providers as providers
 
 
-def test_generator(_provider):
+def generator(_provider):
     """
     Generate tests for each provider
 
     :param test_strings: to generate tests from
     :return: test
     """
-    def _connectivity_test(self):  # pylint: disable=unused-argument
+    def _connectivity_test():
         """
         Generate tests
         :param self:
         :return: test to run
         """
         if not _provider.url:
-            print '%s has no url set, skipping' % _provider.name
+            print('{0} has no url set, skipping'.format(_provider.name))
             return
 
         try:
-            requests.head(_provider.url, verify=certifi.old_where(), timeout=10)
+            requests.head(_provider.url, verify=certifi.where(), timeout=10)
         except requests.exceptions.SSLError as error:
             if 'certificate verify failed' in str(error):
-                print 'Cannot verify certificate for %s' % _provider.name
+                print('Cannot verify certificate for {0}'.format(_provider.name))
             else:
-                print 'SSLError on %s: %s' % (_provider.name, ex(error.message))
+                print('SSLError on {0}: {1}'.format(_provider.name, ex(error.message)))
                 raise
         except requests.exceptions.Timeout:
-            print 'Provider timed out'
+            print('Provider timed out')
 
     return _connectivity_test
 
@@ -77,8 +79,8 @@ if __name__ == "__main__":
     print("######################################################################")
     # Just checking all providers - we should make this error on non-existent urls.
     for provider in [p for p in providers.makeProviderList()]:
-        test_name = 'test_%s' % provider.name
-        test = test_generator(provider)
+        test_name = 'test_{0}'.format(provider.name)
+        test = generator(provider)
         setattr(SniTests, test_name, test)
 
     SUITE = unittest.TestLoader().loadTestsFromTestCase(SniTests)

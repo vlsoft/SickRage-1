@@ -1,7 +1,7 @@
 # coding=utf-8
 
 # Author: Nic Wolfe <nic@wolfeden.ca>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,13 +18,15 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import unicode_literals
+
 from sickbeard import db
 
 
 # Add new migrations at the bottom of the list; subclass the previous migration.
 class InitialSchema(db.SchemaUpgrade):
     def test(self):
-        return self.hasTable("db_version")
+        return self.has_table("db_version")
 
     def execute(self):
         queries = [
@@ -46,7 +48,7 @@ class InitialSchema(db.SchemaUpgrade):
 
 class AddSceneExceptions(InitialSchema):
     def test(self):
-        return self.hasTable("scene_exceptions")
+        return self.has_table("scene_exceptions")
 
     def execute(self):
         self.connection.action(
@@ -55,7 +57,7 @@ class AddSceneExceptions(InitialSchema):
 
 class AddSceneNameCache(AddSceneExceptions):
     def test(self):
-        return self.hasTable("scene_names")
+        return self.has_table("scene_names")
 
     def execute(self):
         self.connection.action("CREATE TABLE scene_names (indexer_id INTEGER, name TEXT);")
@@ -63,7 +65,7 @@ class AddSceneNameCache(AddSceneExceptions):
 
 class AddNetworkTimezones(AddSceneNameCache):
     def test(self):
-        return self.hasTable("network_timezones")
+        return self.has_table("network_timezones")
 
     def execute(self):
         self.connection.action("CREATE TABLE network_timezones (network_name TEXT PRIMARY KEY, timezone TEXT);")
@@ -71,7 +73,7 @@ class AddNetworkTimezones(AddSceneNameCache):
 
 class AddLastSearch(AddNetworkTimezones):
     def test(self):
-        return self.hasTable("lastSearch")
+        return self.has_table("lastSearch")
 
     def execute(self):
         self.connection.action("CREATE TABLE lastSearch (provider TEXT, time NUMERIC);")
@@ -79,31 +81,32 @@ class AddLastSearch(AddNetworkTimezones):
 
 class AddSceneExceptionsSeasons(AddLastSearch):
     def test(self):
-        return self.hasColumn("scene_exceptions", "season")
+        return self.has_column("scene_exceptions", "season")
 
     def execute(self):
-        self.addColumn("scene_exceptions", "season", "NUMERIC", -1)
+        self.add_column("scene_exceptions", "season", "NUMERIC", -1)
 
 
-class AddSceneExceptionsCustom(AddSceneExceptionsSeasons):
+class AddSceneExceptionsCustom(AddSceneExceptionsSeasons):  # pylint:disable=too-many-ancestors
     def test(self):
-        return self.hasColumn("scene_exceptions", "custom")
+        return self.has_column("scene_exceptions", "custom")
 
     def execute(self):
-        self.addColumn("scene_exceptions", "custom", "NUMERIC", 0)
+        self.add_column("scene_exceptions", "custom", "NUMERIC", 0)
 
 
-class AddSceneExceptionsRefresh(AddSceneExceptionsCustom):
+class AddSceneExceptionsRefresh(AddSceneExceptionsCustom):  # pylint:disable=too-many-ancestors
     def test(self):
-        return self.hasTable("scene_exceptions_refresh")
+        return self.has_table("scene_exceptions_refresh")
 
     def execute(self):
         self.connection.action(
             "CREATE TABLE scene_exceptions_refresh (list TEXT PRIMARY KEY, last_refreshed INTEGER);")
 
-class ConvertSceneExeptionsToIndexerScheme(AddSceneExceptionsRefresh):
+
+class ConvertSceneExeptionsToIndexerScheme(AddSceneExceptionsRefresh):  # pylint:disable=too-many-ancestors
     def test(self):
-        return self.hasColumn("scene_exceptions", "indexer_id")
+        return self.has_column("scene_exceptions", "indexer_id")
 
     def execute(self):
         self.connection.action("DROP TABLE IF EXISTS tmp_scene_exceptions;")
@@ -112,9 +115,10 @@ class ConvertSceneExeptionsToIndexerScheme(AddSceneExceptionsRefresh):
         self.connection.action("INSERT INTO scene_exceptions SELECT exception_id, tvdb_id as indexer_id, show_name, season, custom FROM tmp_scene_exceptions;")
         self.connection.action("DROP TABLE tmp_scene_exceptions;")
 
-class ConvertSceneNamesToIndexerScheme(AddSceneExceptionsRefresh):
+
+class ConvertSceneNamesToIndexerScheme(AddSceneExceptionsRefresh):  # pylint:disable=too-many-ancestors
     def test(self):
-        return self.hasColumn("scene_names", "indexer_id")
+        return self.has_column("scene_names", "indexer_id")
 
     def execute(self):
         self.connection.action("DROP TABLE IF EXISTS tmp_scene_names;")

@@ -3,7 +3,7 @@ parser.sql.alchemyadapter module (imdb.parser.sql package).
 
 This module adapts the SQLAlchemy ORM to the internal mechanism.
 
-Copyright 2008-2010 Davide Alberani <da@erlug.linux.it>
+Copyright 2008-2017 Davide Alberani <da@erlug.linux.it>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,21 +25,16 @@ import sys
 import logging
 from sqlalchemy import *
 from sqlalchemy import schema
-try: from sqlalchemy import exc # 0.5
-except ImportError: from sqlalchemy import exceptions as exc # 0.4
+try:
+    from sqlalchemy import exc  # 0.5
+except ImportError:
+    from sqlalchemy import exceptions as exc  # 0.4
 
 _alchemy_logger = logging.getLogger('imdbpy.parser.sql.alchemy')
 
-try:
-    import migrate.changeset
-    HAS_MC = True
-except ImportError:
-    HAS_MC = False
-    _alchemy_logger.warn('Unable to import migrate.changeset: Foreign ' \
-                         'Keys will not be created.')
 
 from imdb._exceptions import IMDbDataAccessError
-from dbschema import *
+from .dbschema import *
 
 # Used to convert table and column names.
 re_upper = re.compile(r'([A-Z])')
@@ -57,6 +52,7 @@ MAP_COLS = {
 
 
 class NotFoundError(IMDbDataAccessError):
+
     """Exception raised when Table.get(id) returns no value."""
     pass
 
@@ -68,6 +64,7 @@ def _renameTable(tname):
         tname = tname[1:]
     return tname.lower()
 
+
 def _renameColumn(cname):
     """Build the name of a column, as done by SQLObject."""
     cname = cname.replace('ID', 'Id')
@@ -75,7 +72,9 @@ def _renameColumn(cname):
 
 
 class DNNameObj(object):
+
     """Used to access table.sqlmeta.columns[column].dbName (a string)."""
+
     def __init__(self, dbName):
         self.dbName = dbName
 
@@ -84,7 +83,9 @@ class DNNameObj(object):
 
 
 class DNNameDict(object):
+
     """Used to access table.sqlmeta.columns (a dictionary)."""
+
     def __init__(self, colMap):
         self.colMap = colMap
 
@@ -96,8 +97,10 @@ class DNNameDict(object):
 
 
 class SQLMetaAdapter(object):
+
     """Used to access table.sqlmeta (an object with .table, .columns and
     .idName attributes)."""
+
     def __init__(self, table, colMap=None):
         self.table = table
         if colMap is None:
@@ -115,11 +118,13 @@ class SQLMetaAdapter(object):
 
     def __repr__(self):
         return '<SQLMetaAdapter(table=%s, colMap=%s) [id=%s]>' % \
-                (repr(self.table), repr(self.colMap), id(self))
+            (repr(self.table), repr(self.colMap), id(self))
 
 
 class QAdapter(object):
+
     """Used to access table.q attribute (remapped to SQLAlchemy table.c)."""
+
     def __init__(self, table, colMap=None):
         self.table = table
         if colMap is None:
@@ -127,16 +132,20 @@ class QAdapter(object):
         self.colMap = colMap
 
     def __getattr__(self, name):
-        try: return getattr(self.table.c, self.colMap[name])
-        except KeyError, e: raise AttributeError("unable to get '%s'" % name)
+        try:
+            return getattr(self.table.c, self.colMap[name])
+        except KeyError:
+            raise AttributeError("unable to get '%s'" % name)
 
     def __repr__(self):
         return '<QAdapter(table=%s, colMap=%s) [id=%s]>' % \
-                (repr(self.table), repr(self.colMap), id(self))
+            (repr(self.table), repr(self.colMap), id(self))
 
 
 class RowAdapter(object):
+
     """Adapter for a SQLAlchemy RowProxy object."""
+
     def __init__(self, row, table, colMap=None):
         self.row = row
         # FIXME: it's OBSCENE that 'table' should be passed from
@@ -146,11 +155,13 @@ class RowAdapter(object):
         if colMap is None:
             colMap = {}
         self.colMap = colMap
-        self.colMapKeys = colMap.keys()
+        self.colMapKeys = list(colMap.keys())
 
     def __getattr__(self, name):
-        try: return getattr(self.row, self.colMap[name])
-        except KeyError, e: raise AttributeError("unable to get '%s'" % name)
+        try:
+            return getattr(self.row, self.colMap[name])
+        except KeyError:
+            raise AttributeError("unable to get '%s'" % name)
 
     def __setattr__(self, name, value):
         # FIXME: I can't even think about how much performances suffer,
@@ -165,7 +176,7 @@ class RowAdapter(object):
             table = self.__dict__['table']
             colMap = self.__dict__['colMap']
             params = {colMap[name]: value}
-            table.update(table.c.id==row.id).execute(**params)
+            table.update(table.c.id == row.id).execute(**params)
             # XXX: minor bug: after a value is assigned with the
             #      'rowAdapterInstance.colName = value' syntax, for some
             #      reason rowAdapterInstance.colName still returns the
@@ -177,11 +188,13 @@ class RowAdapter(object):
 
     def __repr__(self):
         return '<RowAdapter(row=%s, table=%s, colMap=%s) [id=%s]>' % \
-                (repr(self.row), repr(self.table), repr(self.colMap), id(self))
+            (repr(self.row), repr(self.table), repr(self.colMap), id(self))
 
 
 class ResultAdapter(object):
+
     """Adapter for a SQLAlchemy ResultProxy object."""
+
     def __init__(self, result, table, colMap=None):
         self.result = result
         self.table = table
@@ -199,7 +212,8 @@ class ResultAdapter(object):
         return self.result.rowcount
 
     def __getitem__(self, key):
-        res = list(self.result)[key]
+        rlist = list(self.result)
+        res = rlist[key]
         if not isinstance(key, slice):
             # A single item.
             return RowAdapter(res, self.table, colMap=self.colMap)
@@ -214,12 +228,14 @@ class ResultAdapter(object):
 
     def __repr__(self):
         return '<ResultAdapter(result=%s, table=%s, colMap=%s) [id=%s]>' % \
-                (repr(self.result), repr(self.table),
-                    repr(self.colMap), id(self))
+            (repr(self.result), repr(self.table),
+             repr(self.colMap), id(self))
 
 
 class TableAdapter(object):
+
     """Adapter for a SQLAlchemy Table object, to mimic a SQLObject class."""
+
     def __init__(self, table, uri=None):
         """Initialize a TableAdapter object."""
         self._imdbpySchema = table
@@ -243,25 +259,6 @@ class TableAdapter(object):
             if 'length' in params:
                 colKindParams['length'] = params['length']
                 del params['length']
-            elif colClass is UnicodeText and col.index:
-                # XXX: limit length for UNICODECOLs that will have an index.
-                #      this can result in name.name and title.title truncations!
-                colClass = Unicode
-                # Should work for most of the database servers.
-                length = 511
-                if self.connectionURI:
-                    if self.connectionURI.startswith('mysql'):
-                        # To stay compatible with MySQL 4.x.
-                        length = 255
-                colKindParams['length'] = length
-            elif self._imdbpyName == 'PersonInfo' and col.name == 'info':
-                if self.connectionURI:
-                    if self.connectionURI.startswith('ibm'):
-                        # There are some entries longer than 32KB.
-                        colClass = CLOB
-                        # I really do hope that this space isn't wasted
-                        # for each other shorter entry... <g>
-                        colKindParams['length'] = 68*1024
             colKind = colClass(**colKindParams)
             if 'alternateID' in params:
                 # There's no need to handle them here.
@@ -286,14 +283,14 @@ class TableAdapter(object):
     def get(self, theID):
         """Get an object given its ID."""
         result = self.select(self.table.c.id == theID)
-        #if not result:
+        # if not result:
         #    raise NotFoundError, 'no data for ID %s' % theID
         # FIXME: isn't this a bit risky?  We can't check len(result),
         #        because sqlite returns -1...
         #        What about converting it to a list and getting the first item?
         try:
             return result[0]
-        except KeyError:
+        except IndexError:
             raise NotFoundError('no data for ID %s' % theID)
 
     def dropTable(self, checkfirst=True):
@@ -322,16 +319,18 @@ class TableAdapter(object):
 
     def _createIndex(self, col, checkfirst=True):
         """Create an index for a given (schema) column."""
-        # XXX: indexLen is ignored in SQLAlchemy, and that means that
-        #      indexes will be over the whole 255 chars strings...
-        # NOTE: don't use a dot as a separator, or DB2 will do
-        #       nasty things.
         idx_name = '%s_%s' % (self.table.name, col.index or col.name)
         if checkfirst:
             for index in self.table.indexes:
                 if index.name == idx_name:
                     return
-        idx = Index(idx_name, getattr(self.table.c, self.colMap[col.name]))
+        index_args = {}
+        if self.connectionURI.startswith('mysql'):
+            if col.indexLen:
+                index_args['mysql_length'] = col.indexLen
+            elif col.kind in (UNICODECOL, STRINGCOL):
+                index_args['mysql_length'] = min(5, col.params.get('length') or 5)
+        idx = Index(idx_name, getattr(self.table.c, self.colMap[col.name]), **index_args)
         # XXX: beware that exc.OperationalError can be raised, is some
         #      strange circumstances; that's why the index name doesn't
         #      follow the SQLObject convention, but includes the table name:
@@ -339,9 +338,9 @@ class TableAdapter(object):
         #      db-level.
         try:
             idx.create()
-        except exc.OperationalError, e:
+        except exc.OperationalError as e:
             _alchemy_logger.warn('Skipping creation of the %s.%s index: %s' %
-                                (self.sqlmeta.table, col.name, e))
+                                 (self.sqlmeta.table, col.name, e))
 
     def addIndexes(self, ifNotExists=True):
         """Create all required indexes."""
@@ -349,46 +348,10 @@ class TableAdapter(object):
             if col.index:
                 self._createIndex(col, checkfirst=ifNotExists)
 
-    def addForeignKeys(self, mapTables, ifNotExists=True):
-        """Create all required foreign keys."""
-        if not HAS_MC:
-            return
-        # It seems that there's no reason to prevent the creation of
-        # indexes for columns with FK constrains: if there's already
-        # an index, the FK index is not created.
-        countCols = 0
-        for col in self._imdbpySchema.cols:
-            countCols += 1
-            if not col.foreignKey:
-                continue
-            fks = col.foreignKey.split('.', 1)
-            foreignTableName = fks[0]
-            if len(fks) == 2:
-                foreignColName = fks[1]
-            else:
-                foreignColName = 'id'
-            foreignColName = mapTables[foreignTableName].colMap.get(
-                                                foreignColName, foreignColName)
-            thisColName = self.colMap.get(col.name, col.name)
-            thisCol = self.table.columns[thisColName]
-            foreignTable = mapTables[foreignTableName].table
-            foreignCol = getattr(foreignTable.c, foreignColName)
-            # Need to explicitly set an unique name, otherwise it will
-            # explode, if two cols points to the same table.
-            fkName = 'fk_%s_%s_%d' % (foreignTable.name, foreignColName,
-                                        countCols)
-            constrain = migrate.changeset.ForeignKeyConstraint([thisCol],
-                                                        [foreignCol],
-                                                        name=fkName)
-            try:
-                constrain.create()
-            except exc.OperationalError:
-                continue
-
     def __call__(self, *args, **kwds):
         """To insert a new row with the syntax: TableClass(key=value, ...)"""
         taArgs = {}
-        for key, value in kwds.items():
+        for key, value in list(kwds.items()):
             taArgs[self.colMap.get(key, key)] = value
         self._ta_insert.execute(*args, **taArgs)
 
@@ -401,6 +364,7 @@ class TableAdapter(object):
 # when two or more connections to the database are made.
 # XXX: is this the best way to act?
 TABLES_REPOSITORY = {}
+
 
 def getDBTables(uri=None):
     """Return a list of TableAdapter objects to be used to access the
@@ -422,9 +386,11 @@ def AND(*params):
     """Emulate SQLObject's AND."""
     return and_(*params)
 
+
 def OR(*params):
     """Emulate SQLObject's OR."""
     return or_(*params)
+
 
 def IN(item, inList):
     """Emulate SQLObject's IN."""
@@ -433,15 +399,18 @@ def IN(item, inList):
     else:
         return item.in_(inList)
 
+
 def ISNULL(x):
     """Emulate SQLObject's ISNULL."""
     # XXX: Should we use null()?  Can null() be a global instance?
     # XXX: Is it safe to test None with the == operator, in this case?
-    return x == None
+    return x is None
+
 
 def ISNOTNULL(x):
     """Emulate SQLObject's ISNOTNULL."""
-    return x != None
+    return x is not None
+
 
 def CONTAINSSTRING(expr, pattern):
     """Emulate SQLObject's CONTAINSSTRING."""
@@ -455,8 +424,10 @@ def toUTF8(s):
 
 
 class _AlchemyConnection(object):
+
     """A proxy for the connection object, required since _ConnectionFairy
     uses __slots__."""
+
     def __init__(self, conn):
         self.conn = conn
 
@@ -475,11 +446,6 @@ def setConnection(uri, tables, encoding='utf8', debug=False):
         else:
             uri += '?'
         uri += 'charset=%s' % encoding
-        
-        # On some server configurations, we will need to explictly enable
-        # loading data from local files
-        params['local_infile'] = 1
-   
     if debug:
         params['echo'] = True
     if uri.startswith('ibm_db'):
@@ -509,5 +475,3 @@ def setConnection(uri, tables, encoding='utf8', debug=False):
     connection.getConnection = lambda: connection.connection
     connection.dbName = engine.url.drivername
     return connection
-
-

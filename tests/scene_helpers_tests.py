@@ -5,16 +5,12 @@ Test scene helpers
 
 # pylint: disable=line-too-long
 
-import os.path
 import sys
 import unittest
 
-sys.path.insert(1, os.path.abspath(os.path.join(os.path.dirname(__file__), '../lib')))
-sys.path.insert(1, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from sickbeard import show_name_helpers, scene_exceptions, common, name_cache, db
-from sickbeard.tv import TVShow as Show
 import tests.test_lib as test
+from sickbeard import common, db, name_cache, scene_exceptions, show_name_helpers
+from sickbeard.tv import TVShow as Show
 
 
 class SceneTests(test.SickbeardTestDBCase):
@@ -45,7 +41,7 @@ class SceneTests(test.SickbeardTestDBCase):
         :param expected:
         :return:
         """
-        result = show_name_helpers.filterBadReleases(name)
+        result = show_name_helpers.filter_bad_releases(name)
         self.assertEqual(result, expected)
 
     def test_all_possible_show_names(self):
@@ -53,8 +49,8 @@ class SceneTests(test.SickbeardTestDBCase):
         Test all possible show names
         """
         # common.sceneExceptions[-1] = ['Exception Test']
-        my_db = db.DBConnection("cache.db")
-        my_db.action("INSERT INTO scene_exceptions (indexer_id, show_name, season) VALUES (?,?,?)", [-1, 'Exception Test', -1])
+        test_cache_db_con = db.DBConnection('cache.db')
+        test_cache_db_con.action("INSERT INTO scene_exceptions (indexer_id, show_name, season) VALUES (?,?,?)", [-1, 'Exception Test', -1])
         common.countryList['Full Country Name'] = 'FCN'
 
         self._test_all_possible_show_names('Show Name', expected=['Show Name'])
@@ -118,8 +114,8 @@ class SceneExceptionTestCase(test.SickbeardTestDBCase):
         Test scene exceptions reset name cache
         """
         # clear the exceptions
-        my_db = db.DBConnection("cache.db")
-        my_db.action("DELETE FROM scene_exceptions")
+        test_cache_db_con = db.DBConnection('cache.db')
+        test_cache_db_con.action("DELETE FROM scene_exceptions")
 
         # put something in the cache
         name_cache.addNameToCache('Cached Name', 0)

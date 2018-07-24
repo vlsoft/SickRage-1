@@ -1,5 +1,6 @@
 # coding=utf-8
 # Author: Dustyn Gibson <miigotu@gmail.com>
+#
 # URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
@@ -17,14 +18,17 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import re
-from urllib import urlencode
+import string
+
+from requests.compat import urljoin
 from requests.utils import dict_from_cookiejar
 
-from sickbeard import logger
-from sickbeard import tvcache
+from sickbeard import logger, tvcache
 from sickbeard.bs4_parser import BS4Parser
-from sickrage.helper.common import try_int, convert_size
+from sickrage.helper.common import convert_size, try_int
 from sickrage.providers.torrent.TorrentProvider import TorrentProvider
 
 
@@ -32,24 +36,30 @@ class SpeedCDProvider(TorrentProvider):  # pylint: disable=too-many-instance-att
 
     def __init__(self):
 
+        # Provider Init
         TorrentProvider.__init__(self, "Speedcd")
 
+        # Credentials
         self.username = None
         self.password = None
-        self.ratio = None
-        self.freeleech = False
+
+        # Torrent Stats
         self.minseed = None
         self.minleech = None
+        self.freeleech = False
 
-        self.url = 'http://speed.cd/'
+        # URLs
+        self.url = 'https://speed.cd'
         self.urls = {
-            'login': self.url + 'take.login.php',
-            'search': self.url + 'browse.php',
+            'login': urljoin(self.url, 'takeElogin.php'),
+            'search': urljoin(self.url, 'browse.php'),
         }
 
+        # Proper Strings
         self.proper_strings = ['PROPER', 'REPACK']
 
-        self.cache = SpeedCDCache(self)
+        # Cache
+        self.cache = tvcache.TVCache(self)
 
     def login(self):
         if any(dict_from_cookiejar(self.session.cookies).values()):
@@ -57,16 +67,23 @@ class SpeedCDProvider(TorrentProvider):  # pylint: disable=too-many-instance-att
 
         login_params = {
             'username': self.username,
-            'password': self.password
+            'password': self.password,
         }
 
-        response = self.get_url(self.urls['login'], post_data=login_params, timeout=30)
+        # Yay lets add another request to the process since they are unreasonable.
+        response = self.get_url(self.url, returns='text')
+        with BS4Parser(response, 'html5lib') as html:
+            form = html.find('form', id='loginform')
+            if form:
+                self.urls['login'] = urljoin(self.url, form['action'])
+
+        response = self.get_url(self.urls['login'], post_data=login_params, returns='text')
         if not response:
-            logger.log(u"Unable to connect to provider", logger.WARNING)
+            logger.log("Unable to connect to provider", logger.WARNING)
             return False
 
         if re.search('Incorrect username or Password. Please try again.', response):
-            logger.log(u"Invalid username or password. Check your settings", logger.WARNING)
+            logger.log("Invalid username or password. Check your settings", logger.WARNING)
             return False
 
         return True
@@ -77,8 +94,8 @@ class SpeedCDProvider(TorrentProvider):  # pylint: disable=too-many-instance-att
             return results
 
         # http://speed.cd/browse.php?c49=1&c50=1&c52=1&c41=1&c55=1&c2=1&c30=1&freeleech=on&search=arrow&d=on
+        # Search Params
         search_params = {
-            'c2': 1,  # TV/Episodes
             'c30': 1,  # Anime
             'c41': 1,  # TV/Packs
             'c49': 1,  # TV/HD
@@ -87,98 +104,87 @@ class SpeedCDProvider(TorrentProvider):  # pylint: disable=too-many-instance-att
             'c55': 1,  # TV/Kids
             'search': '',
         }
+
+        # Units
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+
+        def process_column_header(td):
+            result = ''
+            img = td.find('img')
+            if img:
+                result = img.get('alt')
+            if not result:
+                result = td.get_text(strip=True)
+            return result
+
         if self.freeleech:
             search_params['freeleech'] = 'on'
 
         for mode in search_strings:
             items = []
-            logger.log(u"Search Mode: %s" % mode, logger.DEBUG)
+            logger.log("Search Mode: {0}".format(mode), logger.DEBUG)
+
             for search_string in search_strings[mode]:
+
                 if mode != 'RSS':
-                    logger.log(u"Search string: %s " % search_string, logger.DEBUG)
+                    logger.log("Search string: {0}".format
+                               (search_string.decode("utf-8")), logger.DEBUG)
 
-                search_params['search'] = search_string
+                search_params['search'] = search_string.translate(None, string.punctuation)
 
-                search_url = "%s?%s" % (self.urls['search'], urlencode(search_params))
-                logger.log(u"Search URL: %s" % search_url, logger.DEBUG)
-
-                # returns top 15 results by default, expandable in user profile to 100
-                data = self.get_url(search_url)
+                data = self.get_url(self.urls['search'], params=search_params, returns='text')
                 if not data:
                     continue
 
                 with BS4Parser(data, 'html5lib') as html:
-                    torrent_table = html.find('div', class_='boxContent').find('table')
-                    torrent_rows = torrent_table.find_all('tr') if torrent_table else []
+                    torrent_table = html.find('div', class_='boxContent')
+                    torrent_table = torrent_table.find('table') if torrent_table else []
+                    torrent_rows = torrent_table('tr') if torrent_table else []
 
-                    # Continue only if one Release is found
+                    # Continue only if at least one Release is found
                     if len(torrent_rows) < 2:
-                        logger.log(u"Data returned from provider does not contain any torrents", logger.DEBUG)
+                        logger.log("Data returned from provider does not contain any torrents", logger.DEBUG)
                         continue
 
-                    def process_column_header(td):
-                        result = ''
-                        if td.a and td.a.img:
-                            result = td.a.img.get('alt', td.a.get_text(strip=True))
-                        if td.img and not result:
-                            result = td.img.get('alt', '')
-                        if not result:
-                            result = td.get_text(strip=True)
-                        return result
+                    labels = [process_column_header(label) for label in torrent_rows[0]('th')]
 
-                    labels = [process_column_header(label) for label in torrent_rows[0].find_all('th')]
-
-                    # skip colheader
+                    # Skip column headers
                     for result in torrent_rows[1:]:
                         try:
-                            cells = result.find_all('td')
+                            cells = result('td')
 
                             title = cells[labels.index('Title')].find('a', class_='torrent').get_text()
-                            download_url = self.url + cells[labels.index('Download')].find(title='Download').parent['href']
+                            download_url = urljoin(self.url, cells[labels.index('Download') - 1].a['href'])
                             if not all([title, download_url]):
                                 continue
 
-                            seeders = try_int(cells[labels.index('Seeders')].get_text(strip=True))
-                            leechers = try_int(cells[labels.index('Leechers')].get_text(strip=True))
+                            seeders = try_int(cells[labels.index('Seeders') - 1].get_text(strip=True))
+                            leechers = try_int(cells[labels.index('Leechers') - 1].get_text(strip=True))
+
+                            # Filter unseeded torrent
                             if seeders < self.minseed or leechers < self.minleech:
                                 if mode != 'RSS':
-                                    logger.log(u"Discarding torrent because it doesn't meet the minimum seeders or leechers: {0} (S:{1} L:{2})".format(title, seeders, leechers), logger.DEBUG)
+                                    logger.log(
+                                        "Discarding torrent because it doesn't meet the minimum seeders or leechers: {0} (S:{1} L:{2})".format(title, seeders, leechers), logger.DEBUG)
                                 continue
 
-                            torrent_size = cells[labels.index('Size')].get_text()
-                            # TODO: Make convert_size work with 123.12GB
+                            torrent_size = cells[labels.index('Size') - 1].get_text()
                             torrent_size = torrent_size[:-2] + ' ' + torrent_size[-2:]
-                            size = convert_size(torrent_size) or -1
+                            size = convert_size(torrent_size, units=units) or -1
 
-                            item = title, download_url, size, seeders, leechers
+                            item = {'title': title, 'link': download_url, 'size': size, 'seeders': seeders, 'leechers': leechers, 'hash': ''}
                             if mode != 'RSS':
-                                logger.log(u"Found result: %s " % title, logger.DEBUG)
+                                logger.log("Found result: {0} with {1} seeders and {2} leechers".format(title, seeders, leechers), logger.DEBUG)
 
                             items.append(item)
                         except StandardError:
                             continue
 
             # For each search mode sort all the items by seeders if available
-            items.sort(key=lambda tup: tup[3], reverse=True)
+            items.sort(key=lambda d: try_int(d.get('seeders', 0)), reverse=True)
             results += items
 
         return results
-
-    def seed_ratio(self):
-        return self.ratio
-
-
-class SpeedCDCache(tvcache.TVCache):
-    def __init__(self, provider_obj):
-
-        tvcache.TVCache.__init__(self, provider_obj)
-
-        # only poll Speedcd every 20 minutes max
-        self.minTime = 20
-
-    def _getRSSData(self):
-        search_strings = {'RSS': ['']}
-        return {'entries': self.provider.search(search_strings)}
 
 
 provider = SpeedCDProvider()

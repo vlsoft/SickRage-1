@@ -7,7 +7,8 @@
 # Copyright 2013 AKFish <akfish@gmail.com>                                     #
 # Copyright 2013 Vincent Jacques <vincent@vincent-jacques.net>                 #
 #                                                                              #
-# This file is part of PyGithub. http://jacquev6.github.com/PyGithub/          #
+# This file is part of PyGithub.                                               #
+# http://pygithub.github.io/PyGithub/v1/index.html                             #
 #                                                                              #
 # PyGithub is free software: you can redistribute it and/or modify it under    #
 # the terms of the GNU Lesser General Public License as published by the Free  #
@@ -33,6 +34,9 @@ class CommitComment(github.GithubObject.CompletableGithubObject):
     """
     This class represents CommitComments as returned for example by http://developer.github.com/v3/todo
     """
+
+    def __repr__(self):
+        return self.get__repr__({"id": self._id.value, "user": self.user})
 
     @property
     def body(self):
@@ -148,6 +152,42 @@ class CommitComment(github.GithubObject.CompletableGithubObject):
             input=post_parameters
         )
         self._useAttributes(data)
+
+    def get_reactions(self):
+        """
+        :calls: `GET /repos/:owner/:repo/comments/:id/reactions
+                <https://developer.github.com/v3/reactions/#list-reactions-for-a-commit-comment>`
+        :return: :class: :class:`github.PaginatedList.PaginatedList` of :class:`github.Reaction.Reaction`
+        """
+        return github.PaginatedList.PaginatedList(
+            github.Reaction.Reaction,
+            self._requester,
+            self.url + "/reactions",
+            None,
+            headers={'Accept': 'application/vnd.github.squirrel-girl-preview'}
+        )
+
+    def create_reaction(self, reaction_type):
+        """
+        :calls: `POST /repos/:owner/:repo/comments/:id/reactions
+                <https://developer.github.com/v3/reactions/#create-reaction-for-a-commit-comment>`_
+        :param reaction_type: string
+        :rtype: :class:`github.Reaction.Reaction`
+        """
+        assert isinstance(reaction_type, (str, unicode)), "reaction type should be a string"
+        assert reaction_type in ["+1", "-1", "laugh", "confused", "heart", "hooray"], \
+            "Invalid reaction type (https://developer.github.com/v3/reactions/#reaction-types)"
+
+        post_parameters = {
+            "content": reaction_type,
+        }
+        headers, data = self._requester.requestJsonAndCheck(
+            "POST",
+            self.url + "/reactions",
+            input=post_parameters,
+            headers={'Accept': 'application/vnd.github.squirrel-girl-preview'}
+        )
+        return github.Reaction.Reaction(self._requester, headers, data, completed=True)
 
     def _initAttributes(self):
         self._body = github.GithubObject.NotSet

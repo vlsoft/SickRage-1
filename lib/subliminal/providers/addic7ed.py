@@ -3,29 +3,36 @@ import logging
 import re
 
 from babelfish import Language, language_converters
+from guessit import guessit
 from requests import Session
 
-from . import ParserBeautifulSoup, Provider, get_version
-from .. import __version__
+from . import ParserBeautifulSoup, Provider
+from .. import __short_version__
 from ..cache import SHOW_EXPIRATION_TIME, region
-from ..exceptions import AuthenticationError, ConfigurationError, DownloadLimitExceeded, TooManyRequests
-from ..subtitle import (Subtitle, fix_line_ending, guess_matches, guess_properties, sanitize_string,
-                        sanitized_string_equal)
+from ..exceptions import AuthenticationError, ConfigurationError, DownloadLimitExceeded
+from ..score import get_equivalent_release_groups
+from ..subtitle import Subtitle, fix_line_ending, guess_matches
+from ..utils import sanitize, sanitize_release_group
 from ..video import Episode
 
 logger = logging.getLogger(__name__)
 
 language_converters.register('addic7ed = subliminal.converters.addic7ed:Addic7edConverter')
 
-series_year_re = re.compile('^(?P<series>[ \w\'.:]+)(?: \((?P<year>\d{4})\))?$')
+# Series cell matching regex
+show_cells_re = re.compile(b'<td class="version">.*?</td>', re.DOTALL)
+
+#: Series header parsing regex
+series_year_re = re.compile(r'^(?P<series>[ \w\'.:(),*&!?-]+?)(?: \((?P<year>\d{4})\))?$')
 
 
 class Addic7edSubtitle(Subtitle):
+    """Addic7ed Subtitle."""
     provider_name = 'addic7ed'
 
     def __init__(self, language, hearing_impaired, page_link, series, season, episode, title, year, version,
                  download_link):
-        super(Addic7edSubtitle, self).__init__(language, hearing_impaired, page_link)
+        super(Addic7edSubtitle, self).__init__(language, hearing_impaired=hearing_impaired, page_link=page_link)
         self.series = series
         self.season = season
         self.episode = episode
@@ -38,11 +45,12 @@ class Addic7edSubtitle(Subtitle):
     def id(self):
         return self.download_link
 
-    def get_matches(self, video, hearing_impaired=False):
-        matches = super(Addic7edSubtitle, self).get_matches(video, hearing_impaired=hearing_impaired)
+    def get_matches(self, video):
+        matches = set()
 
-        # series
-        if video.series and sanitized_string_equal(self.series, video.series):
+        # series name
+        if video.series and sanitize(self.series) in (
+                sanitize(name) for name in [video.series] + video.alternative_series):
             matches.add('series')
         # season
         if video.season and self.season == video.season:
@@ -50,14 +58,16 @@ class Addic7edSubtitle(Subtitle):
         # episode
         if video.episode and self.episode == video.episode:
             matches.add('episode')
-        # title
-        if video.title and sanitized_string_equal(self.title, video.title):
+        # title of the episode
+        if video.title and sanitize(self.title) == sanitize(video.title):
             matches.add('title')
         # year
-        if video.year == self.year:
+        if video.original_series and self.year is None or video.year and video.year == self.year:
             matches.add('year')
         # release_group
-        if video.release_group and self.version and video.release_group.lower() in self.version.lower():
+        if (video.release_group and self.version and
+                any(r in sanitize_release_group(self.version)
+                    for r in get_equivalent_release_groups(sanitize_release_group(video.release_group)))):
             matches.add('release_group')
         # resolution
         if video.resolution and self.version and video.resolution in self.version.lower():
@@ -66,12 +76,13 @@ class Addic7edSubtitle(Subtitle):
         if video.format and self.version and video.format.lower() in self.version.lower():
             matches.add('format')
         # other properties
-        matches |= guess_matches(video, guess_properties(self.version), partial=True)
+        matches |= guess_matches(video, guessit(self.version), partial=True)
 
         return matches
 
 
 class Addic7edProvider(Provider):
+    """Addic7ed Provider."""
     languages = {Language('por', 'BR')} | {Language(l) for l in [
         'ara', 'aze', 'ben', 'bos', 'bul', 'cat', 'ces', 'dan', 'deu', 'ell', 'eng', 'eus', 'fas', 'fin', 'fra', 'glg',
         'heb', 'hrv', 'hun', 'hye', 'ind', 'ita', 'jpn', 'kor', 'mkd', 'msa', 'nld', 'nor', 'pol', 'por', 'ron', 'rus',
@@ -79,21 +90,23 @@ class Addic7edProvider(Provider):
     ]}
     video_types = (Episode,)
     server_url = 'http://www.addic7ed.com/'
+    subtitle_class = Addic7edSubtitle
 
     def __init__(self, username=None, password=None):
-        if username is not None and password is None or username is None and password is not None:
+        if any((username, password)) and not all((username, password)):
             raise ConfigurationError('Username and password must be specified')
 
         self.username = username
         self.password = password
         self.logged_in = False
+        self.session = None
 
     def initialize(self):
         self.session = Session()
-        self.session.headers = {'User-Agent': 'Subliminal/%s' % get_version(__version__)}
+        self.session.headers['User-Agent'] = 'Subliminal/%s' % __short_version__
 
         # login
-        if self.username is not None and self.password is not None:
+        if self.username and self.password:
             logger.info('Logging in')
             data = {'username': self.username, 'password': self.password, 'Submit': 'Log in'}
             r = self.session.post(self.server_url + 'dologin.php', data, allow_redirects=False, timeout=10)
@@ -127,12 +140,21 @@ class Addic7edProvider(Provider):
         logger.info('Getting show ids')
         r = self.session.get(self.server_url + 'shows.php', timeout=10)
         r.raise_for_status()
-        soup = ParserBeautifulSoup(r.content, ['lxml', 'html.parser'])
+
+        # LXML parser seems to fail when parsing Addic7ed.com HTML markup.
+        # Last known version to work properly is 3.6.4 (next version, 3.7.0, fails)
+        # Assuming the site's markup is bad, and stripping it down to only contain what's needed.
+        show_cells = re.findall(show_cells_re, r.content)
+        if show_cells:
+            soup = ParserBeautifulSoup(b''.join(show_cells), ['lxml', 'html.parser'])
+        else:
+            # If RegEx fails, fall back to original r.content and use 'html.parser'
+            soup = ParserBeautifulSoup(r.content, ['html.parser'])
 
         # populate the show ids
         show_ids = {}
         for show in soup.select('td.version > h3 > a[href^="/show/"]'):
-            show_ids[sanitize_string(show.text).lower()] = int(show['href'][6:])
+            show_ids[sanitize(show.text)] = int(show['href'][6:])
         logger.debug('Found %d show ids', len(show_ids))
 
         return show_ids
@@ -143,18 +165,21 @@ class Addic7edProvider(Provider):
 
         :param str series: series of the episode.
         :param year: year of the series, if any.
-        :type year: int or None
+        :type year: int
         :return: the show id, if found.
-        :rtype: int or None
+        :rtype: int
 
         """
+        # addic7ed doesn't support search with quotes
+        series = series.replace('\'', ' ')
+
         # build the params
         series_year = '%s %d' % (series, year) if year is not None else series
-        params = {'search': sanitize_string(series_year, replacement=' '), 'Submit': 'Search'}
+        params = {'search': series_year, 'Submit': 'Search'}
 
         # make the search
         logger.info('Searching show ids with %r', params)
-        r = self.session.get(self.server_url + 'search.php', params=params, timeout=10)
+        r = self.session.get(self.server_url + 'srch.php', params=params, timeout=10)
         r.raise_for_status()
         soup = ParserBeautifulSoup(r.content, ['lxml', 'html.parser'])
 
@@ -163,7 +188,7 @@ class Addic7edProvider(Provider):
         if not suggestion:
             logger.warning('Show id not found: no suggestion')
             return None
-        if not sanitized_string_equal(suggestion[0].i.text, series_year):
+        if not sanitize(suggestion[0].i.text.replace('\'', ' ')) == sanitize(series_year):
             logger.warning('Show id not found: suggestion does not match')
             return None
         show_id = int(suggestion[0]['href'][6:])
@@ -174,18 +199,18 @@ class Addic7edProvider(Provider):
     def get_show_id(self, series, year=None, country_code=None):
         """Get the best matching show id for `series`, `year` and `country_code`.
 
-        First search in the result of :meth:`_get_show_ids` and fallback on a search with :meth:`_search_show_id`
+        First search in the result of :meth:`_get_show_ids` and fallback on a search with :meth:`_search_show_id`.
 
         :param str series: series of the episode.
         :param year: year of the series, if any.
-        :type year: int or None
+        :type year: int
         :param country_code: country code of the series, if any.
-        :type country_code: str or None
+        :type country_code: str
         :return: the show id, if found.
-        :rtype: int or None
+        :rtype: int
 
         """
-        series_sanitized = sanitize_string(series).lower()
+        series_sanitized = sanitize(series).lower()
         show_ids = self._get_show_ids()
         show_id = None
 
@@ -206,24 +231,23 @@ class Addic7edProvider(Provider):
 
         # search as last resort
         if not show_id:
-            logger.warning('Series not found in show ids')
+            logger.warning('Series %s not found in show ids', series)
             show_id = self._search_show_id(series)
 
         return show_id
 
-    def query(self, series, season, year=None, country=None):
-        # get the show id
-        show_id = self.get_show_id(series, year, country)
-        if show_id is None:
-            logger.error('No show id found for %r (%r)', series, {'year': year, 'country': country})
-            return []
-
+    def query(self, show_id, series, season, year=None, country=None):
         # get the page of the season of the show
         logger.info('Getting the page of show id %d, season %d', show_id, season)
         r = self.session.get(self.server_url + 'show/%d' % show_id, params={'season': season}, timeout=10)
         r.raise_for_status()
-        if r.status_code == 304:
-            raise TooManyRequests()
+
+        if not r.content:
+            # Provider returns a status of 304 Not Modified with an empty content
+            # raise_for_status won't raise exception for that status code
+            logger.debug('No data returned from provider')
+            return []
+
         soup = ParserBeautifulSoup(r.content, ['lxml', 'html.parser'])
 
         # loop over subtitle rows
@@ -250,16 +274,32 @@ class Addic7edProvider(Provider):
             version = cells[4].text
             download_link = cells[9].a['href'][1:]
 
-            subtitle = Addic7edSubtitle(language, hearing_impaired, page_link, series, season, episode, title, year,
-                                        version, download_link)
+            subtitle = self.subtitle_class(language, hearing_impaired, page_link, series, season, episode, title, year,
+                                           version, download_link)
             logger.debug('Found subtitle %r', subtitle)
             subtitles.append(subtitle)
 
         return subtitles
 
     def list_subtitles(self, video, languages):
-        return [s for s in self.query(video.series, video.season, video.year)
-                if s.language in languages and s.episode == video.episode]
+        # lookup show_id
+        titles = [video.series] + video.alternative_series
+        show_id = None
+        for title in titles:
+            show_id = self.get_show_id(title, video.year)
+            if show_id is not None:
+                break
+
+        # query for subtitles with the show_id
+        if show_id is not None:
+            subtitles = [s for s in self.query(show_id, title, video.season, video.year)
+                         if s.language in languages and s.episode == video.episode]
+            if subtitles:
+                return subtitles
+        else:
+            logger.error('No show id found for %r (%r)', video.series, {'year': video.year})
+
+        return []
 
     def download_subtitle(self, subtitle):
         # download the subtitle
@@ -267,6 +307,12 @@ class Addic7edProvider(Provider):
         r = self.session.get(self.server_url + subtitle.download_link, headers={'Referer': subtitle.page_link},
                              timeout=10)
         r.raise_for_status()
+
+        if not r.content:
+            # Provider returns a status of 304 Not Modified with an empty content
+            # raise_for_status won't raise exception for that status code
+            logger.debug('Unable to download subtitle. No data returned from provider')
+            return
 
         # detect download limit exceeded
         if r.headers['Content-Type'] == 'text/html':

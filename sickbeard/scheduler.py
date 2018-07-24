@@ -18,9 +18,11 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import datetime
-import time
 import threading
+import time
 import traceback
 
 from sickbeard import logger
@@ -37,7 +39,7 @@ class Scheduler(threading.Thread):
             self.lastRun = datetime.datetime.now() + self.run_delay - cycleTime
         else:
             # Set last run to the last full hour
-            temp_now = datetime.datetime.now() + cycleTime
+            temp_now = datetime.datetime.now()
             self.lastRun = datetime.datetime(temp_now.year, temp_now.month, temp_now.day, temp_now.hour, 0, 0, 0) + self.run_delay - cycleTime
         self.action = action
         self.cycleTime = cycleTime
@@ -56,11 +58,12 @@ class Scheduler(threading.Thread):
         """
         if self.isAlive():
             if self.start_time is None:
-                return self.cycleTime - (datetime.datetime.now() - self.lastRun)
+                delta = datetime.datetime.now() - self.lastRun
+                return (self.cycleTime - delta, self.cycleTime)[delta > self.cycleTime]
             else:
                 time_now = datetime.datetime.now()
                 start_time_today = datetime.datetime.combine(time_now.date(), self.start_time)
-                start_time_tomorrow = datetime.datetime.combine(time_now.date(), self.start_time) + datetime.timedelta(days=1)
+                start_time_tomorrow = start_time_today + datetime.timedelta(days=1)
                 if time_now.hour >= self.start_time.hour:
                     return start_time_tomorrow - time_now
                 elif time_now.hour < self.start_time.hour:
@@ -102,7 +105,7 @@ class Scheduler(threading.Thread):
                     if should_run:
                         self.lastRun = current_time
                         if not self.silent:
-                            logger.log(u"Starting new thread: " + self.name, logger.DEBUG)
+                            logger.log("Starting new thread: " + self.name, logger.DEBUG)
                         self.action.run(self.force)
 
                     if self.force:
@@ -112,5 +115,5 @@ class Scheduler(threading.Thread):
             # exiting thread
             self.stop.clear()
         except Exception as e:
-            logger.log(u"Exception generated in thread " + self.name + ": " + ex(e), logger.ERROR)
+            logger.log("Exception generated in thread " + self.name + ": " + ex(e), logger.ERROR)
             logger.log(repr(traceback.format_exc()), logger.DEBUG)

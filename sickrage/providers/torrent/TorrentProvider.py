@@ -17,11 +17,14 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
-import sickbeard
+from __future__ import unicode_literals
 
 from datetime import datetime
+
 from feedparser.util import FeedParserDict
 from hachoir_parser import createParser
+
+import sickbeard
 from sickbeard import logger
 from sickbeard.classes import Proper, TorrentSearchResult
 from sickbeard.common import Quality
@@ -35,7 +38,7 @@ from sickrage.show.Show import Show
 class TorrentProvider(GenericProvider):
     def __init__(self, name):
         GenericProvider.__init__(self, name)
-
+        self.ratio = None
         self.provider_type = GenericProvider.TORRENT
 
     def find_propers(self, search_date=None):
@@ -47,27 +50,29 @@ class TorrentProvider(GenericProvider):
             ' FROM tv_episodes AS e'
             ' INNER JOIN tv_shows AS s ON (e.showid = s.indexer_id)'
             ' WHERE e.airdate >= ' + str(search_date.toordinal()) +
-            ' AND e.status IN (' + placeholder + ')'
+            ' AND e.status IN (' + placeholder + ') and e.is_proper = 0'
         )
 
         for result in sql_results or []:
-            show = Show.find(sickbeard.showList, int(result['showid']))
+            show = Show.find(sickbeard.showList, int(result[b'showid']))
 
             if show:
-                episode = show.getEpisode(result['season'], result['episode'])
+                episode = show.getEpisode(result[b'season'], result[b'episode'])
 
                 for term in self.proper_strings:
                     search_strings = self._get_episode_search_strings(episode, add_string=term)
 
-                    for item in self.search(search_strings[0]):
-                        title, url = self._get_title_and_url(item)
+                    for search_string in search_strings:
+                        for item in self.search(search_string):
+                            title, url = self._get_title_and_url(item)
 
-                        results.append(Proper(title, url, datetime.today(), show))
+                            results.append(Proper(title, url, datetime.today(), show))
 
         return results
 
+    @property
     def is_active(self):
-        return bool(sickbeard.USE_TORRENTS) and self.is_enabled()
+        return bool(sickbeard.USE_TORRENTS) and self.is_enabled
 
     @property
     def _custom_trackers(self):
@@ -111,8 +116,8 @@ class TorrentProvider(GenericProvider):
             title = ''
 
         if title.endswith('DIAMOND'):
-            logger.log(u'Skipping DIAMOND release for mass fake releases.')
-            download_url = title = u'FAKERELEASE'
+            logger.log('Skipping DIAMOND release for mass fake releases.')
+            download_url = title = 'FAKERELEASE'
 
         if download_url:
             download_url = download_url.replace('&amp;', '&')
@@ -139,7 +144,10 @@ class TorrentProvider(GenericProvider):
                 if mime_type == 'application/x-bittorrent':
                     return True
         except Exception as e:
-            logger.log(u'Failed to validate torrent file: %s' % ex(e), logger.DEBUG)
+            logger.log('Failed to validate torrent file: {0}'.format(ex(e)), logger.DEBUG)
 
-        logger.log(u'Result is not a valid torrent file', logger.DEBUG)
+        logger.log('Result is not a valid torrent file', logger.DEBUG)
         return False
+
+    def seed_ratio(self):
+        return self.ratio

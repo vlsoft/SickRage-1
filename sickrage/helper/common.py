@@ -17,15 +17,27 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import unicode_literals
+"""
+Common helper functions
+"""
 
+from __future__ import print_function, unicode_literals
+
+import glob
+import os
 import re
+from fnmatch import fnmatch
+
+import six
+from github import Github
+from github.GithubException import BadCredentialsException, TwoFactorException
+
 import sickbeard
 
 dateFormat = '%Y-%m-%d'
 dateTimeFormat = '%Y-%m-%d %H:%M:%S'
 # Mapping HTTP status codes to official W3C names
-http_status_code = {
+HTTP_STATUS_CODES = {
     300: 'Multiple Choices',
     301: 'Moved Permanently',
     302: 'Found',
@@ -102,11 +114,13 @@ http_status_code = {
     598: 'Network read timeout error',
     599: 'Network connect timeout error',
 }
-media_extensions = [
-    '3gp', 'avi', 'divx', 'dvr-ms', 'f4v', 'flv', 'img', 'iso', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg',
-    'ogm', 'ogv', 'rmvb', 'tp', 'ts', 'vob', 'webm', 'wmv', 'wtv',
+MEDIA_EXTENSIONS = [
+    '3gp', 'avi', 'divx', 'dvr-ms', 'f4v', 'flv', 'm2ts', 'm4v',
+    'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'ogm', 'ogv', 'rmvb', 'tp', 'ts', 'vob',
+    'webm', 'wmv', 'wtv',
 ]
-subtitle_extensions = ['ass', 'idx', 'srt', 'ssa', 'sub']
+
+SUBTITLE_EXTENSIONS = ['ass', 'idx', 'srt', 'ssa', 'sub']
 timeFormat = '%A %I:%M %p'
 
 
@@ -117,18 +131,12 @@ def http_code_description(http_code):
     :return: The description of the provided ``http_code``
     """
 
-    if http_code in http_status_code:
-        description = http_status_code[http_code]
+    description = HTTP_STATUS_CODES.get(try_int(http_code))
 
-        if isinstance(description, list):
-            return '(%s)' % ', '.join(description)
+    if isinstance(description, list):
+        return '({0})'.format(', '.join(description))
 
-        return description
-
-    # TODO Restore logger import
-    # logger.log('Unknown HTTP status code %s. Please submit an issue' % http_code, logger.ERROR)
-
-    return None
+    return description
 
 
 def is_sync_file(filename):
@@ -138,10 +146,12 @@ def is_sync_file(filename):
     :return: ``True`` if the ``filename`` is a sync file, ``False`` otherwise
     """
 
-    if isinstance(filename, (str, unicode)):
+    if isinstance(filename, six.string_types):
         extension = filename.rpartition('.')[2].lower()
 
-        return extension in sickbeard.SYNC_FILES.split(',') or filename.startswith('.syncthing')
+        return extension in sickbeard.SYNC_FILES.split(',') or \
+            filename.startswith('.syncthing') or \
+            any(fnmatch(filename, match) for match in sickbeard.SYNC_FILES.split(','))
 
     return False
 
@@ -153,7 +163,7 @@ def is_torrent_or_nzb_file(filename):
     :return: ``True`` if the ``filename`` is a NZB file or a torrent file, ``False`` otherwise
     """
 
-    if not isinstance(filename, (str, unicode)):
+    if not isinstance(filename, six.string_types):
         return False
 
     return filename.rpartition('.')[2].lower() in ['nzb', 'torrent']
@@ -166,7 +176,8 @@ def pretty_file_size(size, use_decimal=False, **kwargs):
     :param size: The size to convert
     :param use_decimal: use decimal instead of binary prefixes (e.g. kilo = 1000 instead of 1024)
 
-    :keyword units: A list of unit names in ascending order. Default units: ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    :keyword units: A list of unit names in ascending order.
+        Default units: ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
     :return: The converted size
     """
@@ -180,7 +191,7 @@ def pretty_file_size(size, use_decimal=False, **kwargs):
     block = 1024. if not use_decimal else 1000.
     for unit in units:
         if remaining_size < block:
-            return '%3.2f %s' % (remaining_size, unit)
+            return '{0:3.2f} {1}'.format(remaining_size, unit)
         remaining_size /= block
     return size
 
@@ -194,8 +205,11 @@ def convert_size(size, default=None, use_decimal=False, **kwargs):
     :param use_decimal: use decimal instead of binary prefixes (e.g. kilo = 1000 instead of 1024)
 
     :keyword sep: Separator between size and units, default is space
-    :keyword units: A list of (uppercase) unit names in ascending order. Default units: ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-    :keyword default_units: Default unit if none is given, default is lowest unit in the scale, e.g. bytes
+    :keyword units: A list of (uppercase) unit names in ascending order.
+        Default units: ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+
+    :keyword default_units: Default unit if none is given,
+        default is lowest unit on the scale, e.g. bytes
 
     :returns: the number of bytes, the default value, or 0
     """
@@ -211,9 +225,9 @@ def convert_size(size, default=None, use_decimal=False, **kwargs):
             scalar, units = size_tuple[0], size_tuple[1:]
             units = units[0].upper() if units else default_units
         else:
-            regex_units = re.search(r'(\w+)', size, re.IGNORECASE)
-            units = regex_units.group() if regex_units else default_units
-            scalar = size.strip(units)
+            regex_scalar = re.search(r'([\d. ]+)', size, re.I)
+            scalar = regex_scalar.group() if regex_scalar else -1
+            units = size.strip(scalar) if scalar != -1 else 'B'
 
         scalar = float(scalar)
         scalar *= (1024 if not use_decimal else 1000) ** scale.index(units)
@@ -230,8 +244,7 @@ def convert_size(size, default=None, use_decimal=False, **kwargs):
     finally:
         try:
             if result != default:
-                result = long(result)
-                result = max(result, 0)
+                result = max(int(result), 0)
         except (TypeError, ValueError):
             pass
 
@@ -241,15 +254,15 @@ def convert_size(size, default=None, use_decimal=False, **kwargs):
 def remove_extension(filename):
     """
     Remove the extension of the provided ``filename``.
-    The extension is only removed if it is in `sickrage.helper.common.media_extensions` or ['nzb', 'torrent'].
+    The extension is only removed if it is in MEDIA_EXTENSIONS or ['nzb', 'torrent'].
     :param filename: The filename from which we want to remove the extension
     :return: The ``filename`` without its extension.
     """
 
-    if isinstance(filename, (str, unicode)) and '.' in filename:
+    if isinstance(filename, six.string_types) and '.' in filename:
         basename, _, extension = filename.rpartition('.')
 
-        if basename and extension.lower() in ['nzb', 'torrent'] + media_extensions:
+        if basename and extension.lower() in ['nzb', 'torrent'] + MEDIA_EXTENSIONS:
             return basename
 
     return filename
@@ -263,11 +276,10 @@ def replace_extension(filename, new_extension):
     :return: The ``filename`` with the new extension
     """
 
-    if isinstance(filename, (str, unicode)) and '.' in filename:
-        basename, _, _ = filename.rpartition('.')
-
+    if isinstance(filename, six.string_types) and '.' in filename:
+        basename = filename.rpartition('.')[0]
         if basename:
-            return '%s.%s' % (basename, new_extension)
+            return '{0}.{1}'.format(basename, new_extension)
 
     return filename
 
@@ -279,10 +291,10 @@ def sanitize_filename(filename):
     :return: The ``filename``cleaned
     """
 
-    if isinstance(filename, (str, unicode)):
+    if isinstance(filename, six.string_types):
         filename = re.sub(r'[\\/\*]', '-', filename)
         filename = re.sub(r'[:"<>|?]', '', filename)
-        filename = re.sub(r'™', '', filename)  # Trade Mark Sign unicode: \u2122
+        filename = re.sub(r'™|-u2122', '', filename)  # Trade Mark Sign unicode: \u2122
         filename = filename.strip(' .')
 
         return filename
@@ -302,3 +314,88 @@ def try_int(candidate, default_value=0):
         return int(candidate)
     except (ValueError, TypeError):
         return default_value
+
+
+def episode_num(season=None, episode=None, **kwargs):
+    """
+    Convert season and episode into string
+
+    :param season: Season number
+    :param episode: Episode Number
+    :keyword numbering: Absolute for absolute numbering
+    :returns: a string in s01e01 format or absolute numbering
+    """
+
+    numbering = kwargs.pop('numbering', 'standard')
+
+    if numbering == 'standard':
+        if season is not None and episode:
+            return 'S{0:0>2}E{1:02}'.format(season, episode)
+    elif numbering == 'absolute':
+        if not (season and episode) and (season or episode):
+            return '{0:0>3}'.format(season or episode)
+
+
+# Backport glob.escape from python 3.4
+# https://hg.python.org/cpython/file/3.4/Lib/glob.py#l87
+MAGIC_CHECK = re.compile('([*?[])')
+MAGIC_CHECK_BYTES = re.compile(b'([*?[])')
+
+
+# https://hg.python.org/cpython/file/3.4/Lib/glob.py#l100
+def glob_escape(pathname):
+    """Escape all special characters.
+    """
+    # Escaping is done by wrapping any of "*?[" between square brackets.
+    # Metacharacters do not work in the drive part and shouldn't be escaped.
+    drive, pathname = os.path.splitdrive(pathname)
+    if isinstance(pathname, bytes):
+        pathname = MAGIC_CHECK_BYTES.sub(br'[\1]', pathname)
+    else:
+        pathname = MAGIC_CHECK.sub(r'[\1]', pathname)
+    return drive + pathname
+
+CUSTOM_GLOB = glob
+CUSTOM_GLOB.escape = glob_escape
+
+
+def setup_github():
+    """
+    Instantiate the global github connection, for checking for updates and submitting issues
+    """
+
+    try:
+        if sickbeard.GIT_AUTH_TYPE == 0 and sickbeard.GIT_USERNAME and sickbeard.GIT_PASSWORD:
+            # Basic Username/Password Auth
+            sickbeard.gh = Github(
+                login_or_token=sickbeard.GIT_USERNAME,
+                password=sickbeard.GIT_PASSWORD, user_agent="SickRage")
+            # This will trigger BadCredentialsException if user/pass are wrong
+            sickbeard.gh.get_organization(sickbeard.GIT_ORG)
+
+        elif sickbeard.GIT_AUTH_TYPE == 1 and sickbeard.GIT_TOKEN:
+            # Token Auth - allows users with Two-Factor Authorization (2FA) enabled on Github to connect their account.
+            sickbeard.gh = Github(
+                login_or_token=sickbeard.GIT_TOKEN, user_agent="SickRage")
+            # This will trigger:
+            # * BadCredentialsException if token is invalid
+            # * TwoFactorException if user has enabled Github-2FA
+            #   but didn't set a personal token in the configuration.
+            sickbeard.gh.get_organization(sickbeard.GIT_ORG)
+
+            # Update GIT_USERNAME if it's not the same, so we don't run into problems later on.
+            gh_user = sickbeard.gh.get_user().login
+            sickbeard.GIT_USERNAME = gh_user if sickbeard.GIT_USERNAME != gh_user else sickbeard.GIT_USERNAME
+
+    except (Exception, BadCredentialsException, TwoFactorException) as error:
+        sickbeard.gh = None
+        sickbeard.logger.log('Unable to setup GitHub properly with your github login. Please'
+                             ' check your credentials. Error: {0}'.format(error), sickbeard.logger.WARNING)
+
+    if not sickbeard.gh:
+        try:
+            sickbeard.gh = Github(user_agent="SickRage")
+        except Exception as error:
+            sickbeard.gh = None
+            sickbeard.logger.log('Unable to setup GitHub properly. GitHub will not be '
+                                 'available. Error: {0}'.format(error), sickbeard.logger.WARNING)

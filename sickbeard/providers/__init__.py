@@ -1,7 +1,7 @@
 # coding=utf-8
-
 # Author: Nic Wolfe <nic@wolfeden.ca>
-# URL: http://code.google.com/p/sickbeard/
+#
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,24 +18,25 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import unicode_literals
+
 from os import sys
 from random import shuffle
 
 import sickbeard
-from sickbeard.providers import btn, newznab, rsstorrent, womble, thepiratebay, torrentleech, kat, iptorrents, torrentz, \
-    omgwtfnzbs, scc, hdtorrents, torrentday, hdbits, hounddawgs, speedcd, nyaatorrents, bluetigers, fnt, xthor, torrentbytes, \
-    freshontv, morethantv, bitsoup, t411, tokyotoshokan, shazbat, rarbg, alpharatio, tntvillage, binsearch, torrentproject, extratorrent, \
-    scenetime, btdigg, transmitthenet, tvchaosuk, bitcannon, pretome, gftracker, hdspace, newpct, elitetorrent, bitsnoop, danishbits, hd4free, limetorrents
+from sickbeard.providers import (abnormal, alpharatio, archetorrent, binsearch, bitcannon, bjshare, btn, cpasbien, danishbits, elitetorrent, filelist,
+                                 gftracker, gimmepeers, hd4free, hdbits, hdspace, hdtorrents, hdtorrents_it, horriblesubs, hounddawgs, ilcorsaronero,
+                                 immortalseed, iptorrents, limetorrents, morethantv, ncore, nebulance, newpct, norbits, nyaa, omgwtfnzbs, pretome, rarbg, scc,
+                                 scenetime, shazbat, skytorrents, speedcd, thepiratebay, tntvillage, tokyotoshokan, torrent9, torrentbytes, torrentday,
+                                 torrentleech, torrentproject, torrentz, tvchaosuk, xthor, yggtorrent)
 
 __all__ = [
-    'womble', 'btn', 'thepiratebay', 'kat', 'torrentleech', 'scc', 'hdtorrents',
-    'torrentday', 'hdbits', 'hounddawgs', 'iptorrents', 'omgwtfnzbs',
-    'speedcd', 'nyaatorrents', 'torrentbytes', 'freshontv',
-    'morethantv', 'bitsoup', 't411', 'tokyotoshokan', 'alpharatio',
-    'shazbat', 'rarbg', 'tntvillage', 'binsearch', 'bluetigers',
-    'fnt', 'xthor', 'scenetime', 'btdigg', 'transmitthenet', 'tvchaosuk',
-    'torrentproject', 'extratorrent', 'bitcannon', 'torrentz', 'pretome', 'gftracker',
-    'hdspace', 'newpct', 'elitetorrent', 'bitsnoop', 'danishbits', 'hd4free', 'limetorrents'
+    'abnormal', 'alpharatio', 'archetorrent', 'binsearch', 'bitcannon', 'bjshare', 'btn', 'cpasbien', 'danishbits',
+    'elitetorrent', 'filelist', 'gftracker', 'gimmepeers', 'hd4free', 'hdbits', 'hdspace', 'hdtorrents', 'hdtorrents_it',
+    'horriblesubs', 'hounddawgs', 'ilcorsaronero', 'immortalseed', 'iptorrents', 'limetorrents', 'morethantv',
+    'ncore', 'nebulance', 'newpct', 'norbits', 'nyaa', 'omgwtfnzbs', 'pretome', 'rarbg', 'scc', 'scenetime',
+    'shazbat', 'skytorrents', 'speedcd', 'thepiratebay', 'tntvillage', 'tokyotoshokan', 'torrent9',
+    'torrentbytes', 'torrentday', 'torrentleech', 'torrentproject', 'torrentz', 'tvchaosuk', 'xthor', 'yggtorrent'
 ]
 
 
@@ -52,7 +53,7 @@ def sortedProviderList(randomize=False):
 
     # add all enabled providers first
     for curModule in providerDict:
-        if providerDict[curModule] not in newList and providerDict[curModule].is_enabled():
+        if providerDict[curModule] not in newList and providerDict[curModule].is_enabled:
             newList.append(providerDict[curModule])
 
     # add any modules that are missing from that list
@@ -67,7 +68,7 @@ def sortedProviderList(randomize=False):
 
 
 def makeProviderList():
-    return [x.provider for x in [getProviderModule(y) for y in __all__] if x]
+    return [x.provider for x in (getProviderModule(y) for y in __all__) if x]
 
 
 def getProviderModule(name):
@@ -88,3 +89,28 @@ def getProviderClass(provider_id):
         return None
     else:
         return providerMatch[0]
+
+
+def check_enabled_providers():
+    if not sickbeard.DEVELOPER:
+        backlog_enabled, daily_enabled = False, False
+        for provider in sortedProviderList():
+            if provider.is_active:
+                if provider.enable_daily and provider.can_daily:
+                    daily_enabled = True
+
+                if provider.enable_backlog and provider.can_backlog:
+                    backlog_enabled = True
+
+                if backlog_enabled and daily_enabled:
+                    break
+
+        if not (daily_enabled and backlog_enabled):
+            searches = ((_('daily searches and backlog searches'), _('daily searches'))[backlog_enabled],
+                        _('backlog searches'))[daily_enabled]
+            formatted_msg = _('No NZB/Torrent providers found or enabled for {searches}.<br/>'
+                              'Please <a href="{web_root}/config/providers/">check your settings</a>.')
+            sickbeard.helpers.add_site_message(formatted_msg.format(searches=searches, web_root=sickbeard.WEB_ROOT),
+                                               tag='no_providers_enabled', level='danger')
+        else:
+            sickbeard.helpers.remove_site_message(tag='no_providers_enabled')

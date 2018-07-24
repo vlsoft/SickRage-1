@@ -1,6 +1,6 @@
-# -*- coding: latin-1 -*-
-# Author: adaur <adaur.underground@gmail.com>
-# Rewrite: Dustyn Gibson (miigotu) <miigotu@gmail.com>
+# coding=utf-8
+# Author: Dustyn Gibson <miigotu@gmail.com>
+#
 # URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
@@ -18,163 +18,107 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
-import re
-import requests
-import cookielib
-from urllib import urlencode
+from __future__ import print_function, unicode_literals
 
-from sickbeard import logger
-from sickbeard import tvcache
-from sickbeard.bs4_parser import BS4Parser
+from sickbeard import logger, tvcache
+from sickrage.helper.common import try_int
 from sickrage.providers.torrent.TorrentProvider import TorrentProvider
 
-from sickrage.helper.common import try_int, convert_size
 
-
-class XthorProvider(TorrentProvider):  # pylint: disable=too-many-instance-attributes
+class XThorProvider(TorrentProvider):
 
     def __init__(self):
 
-        TorrentProvider.__init__(self, "Xthor")
+        TorrentProvider.__init__(self, 'XThor')
 
-        self.cj = cookielib.CookieJar()
+        self.url = 'https://xthor.to'
+        self.urls = {'search': 'https://api.xthor.to'}
 
-        self.url = 'https://xthor.bz'
-        self.urls = {
-            'login': self.url + '/takelogin.php',
-            'search': self.url + '/browse.php?'
-        }
-
-        self.ratio = None
-        self.minseed = None
-        self.minleech = None
-        self.username = None
-        self.password = None
         self.freeleech = None
-        self.proper_strings = ['PROPER']
-        self.cache = XthorCache(self)
+        self.api_key = None
 
-    def login(self):
+        self.cache = tvcache.TVCache(self, min_time=10)  # Only poll XThor every 10 minutes max
 
-        if any(requests.utils.dict_from_cookiejar(self.session.cookies).values()):
+    def _check_auth(self):
+        if self.api_key:
             return True
 
-        login_params = {'username': self.username,
-                        'password': self.password,
-                        'submitme': 'X'}
+        logger.log('Your authentication credentials for {0} are missing, check your config.'.format(self.name), logger.WARNING)
+        return False
 
-        response = self.get_url(self.urls['login'], post_data=login_params, timeout=30)
-        if not response:
-            logger.log(u"Unable to connect to provider", logger.WARNING)
-            return False
-
-        if re.search('donate.php', response):
-            return True
-        else:
-            logger.log(u"Invalid username or password. Check your settings", logger.WARNING)
-            return False
-
-    def search(self, search_strings, age=0, ep_obj=None):  # pylint: disable=too-many-locals, too-many-branches
+    def search(self, search_strings, age=0, ep_obj=None):
         results = []
-        if not self.login():
+        if not self._check_auth:
             return results
 
-        """
-            Séries / Pack TV 13
-            Séries / TV FR 14
-            Séries / HD FR 15
-            Séries / TV VOSTFR 16
-            Séries / HD VOSTFR 17
-            Mangas (Anime) 32
-            Sport 34
-        """
         search_params = {
-            'only_free': try_int(self.freeleech),
-            'searchin': 'title',
-            'incldead': 0,
-            'type': 'desc',
-            'c13': 1, 'c14': 1, 'c15': 1,
-            'c16': 1, 'c17': 1, 'c32': 1
+            'passkey': self.api_key
         }
+        if self.freeleech:
+            search_params['freeleech'] = 1
 
         for mode in search_strings:
             items = []
-            logger.log(u"Search Mode: %s" % mode, logger.DEBUG)
-
-            # Sorting: 1: Name, 3: Comments, 5: Size, 6: Completed, 7: Seeders, 8: Leechers (4: Time ?)
-            search_params['sort'] = (7, 4)[mode == 'RSS']
+            logger.log('Search Mode: {0}'.format(mode), logger.DEBUG)
             for search_string in search_strings[mode]:
                 if mode != 'RSS':
-                    logger.log(u"Search string: %s " % search_string, logger.DEBUG)
+                    logger.log('Search string: ' + search_string.strip(), logger.DEBUG)
+                    search_params['search'] = search_string
+                else:
+                    search_params.pop('search', '')
 
-                search_params['search'] = search_string
-                search_url = self.urls['search'] + urlencode(search_params)
-                logger.log(u"Search URL: %s" % search_url, logger.DEBUG)
-                data = self.get_url(search_url)
-                if not data:
+                jdata = self.get_url(self.urls['search'], params=search_params, returns='json')
+                if not jdata:
+                    logger.log('No data returned from provider', logger.DEBUG)
                     continue
 
-                with BS4Parser(data, 'html5lib') as html:
-                    torrent_table = html.find("table", class_="table2 table-bordered2")
-                    torrent_rows = []
-                    if torrent_table:
-                        torrent_rows = torrent_table.find_all("tr")
+                error_code = jdata.pop('error', {})
+                if error_code.get('code'):
+                    if error_code.get('code') != 2:
+                        logger.log('{0}'.format(error_code.get('descr', 'Error code 2 - no description available')), logger.WARNING)
+                        return results
+                    continue
 
-                    # Continue only if at least one Release is found
-                    if len(torrent_rows) < 2:
-                        logger.log(u"Data returned from provider does not contain any torrents", logger.DEBUG)
-                        continue
+                account_ok = jdata.pop('user', {}).get('can_leech')
+                if not account_ok:
+                    logger.log('Sorry, your account is not allowed to download, check your ratio', logger.WARNING)
+                    return results
 
-                    # Catégorie, Nom du Torrent, (Download), (Bookmark), Com., Taille, Complété, Seeders, Leechers
-                    labels = [label.get_text(strip=True) for label in torrent_rows[0].find_all('td')]
+                torrents = jdata.pop('torrents', None)
+                if not torrents:
+                    logger.log('Provider has no results for this search', logger.DEBUG)
+                    continue
 
-                    for row in torrent_rows[1:]:
-                        try:
-                            cells = row.find_all('td')
-                            title = cells[labels.index('Nom du Torrent')].get_text(strip=True)
-                            download_url = self.url + '/' + row.find("a", href=re.compile("download.php"))['href']
-                            size = convert_size(cells[labels.index('Taille')].get_text(strip=True))
-                            seeders = try_int(cells[labels.index('Seeders')].get_text(strip=True))
-                            leechers = try_int(cells[labels.index('Leechers')].get_text(strip=True))
-                        except (AttributeError, TypeError, KeyError, ValueError):
+                for torrent in torrents:
+                    try:
+                        title = torrent.get('name')
+                        download_url = torrent.get('download_link')
+                        if not (title and download_url):
                             continue
 
-                        if not all([title, download_url]):
+                        seeders = torrent.get('seeders')
+                        leechers = torrent.get('leechers')
+                        if not seeders and mode != 'RSS':
+                            logger.log('Discarding torrent because it doesn\'t meet the minimum seeders or leechers: {0} (S:{1} L:{2})'.format
+                                       (title, seeders, leechers), logger.DEBUG)
                             continue
 
-                        # Filter unseeded torrent
-                        if seeders < self.minseed or leechers < self.minleech:
-                            if mode != 'RSS':
-                                logger.log(u"Discarding torrent because it doesn't meet the minimum seeders or leechers: {0} (S:{1} L:{2})".format(title, seeders, leechers), logger.DEBUG)
-                            continue
+                        size = torrent.get('size') or -1
+                        item = {'title': title, 'link': download_url, 'size': size, 'seeders': seeders, 'leechers': leechers, 'hash': ''}
 
-                        item = title, download_url, size, seeders, leechers
                         if mode != 'RSS':
-                            logger.log(u"Found result: %s " % title, logger.DEBUG)
+                            logger.log('Found result: {0} with {1} seeders and {2} leechers'.format(title, seeders, leechers), logger.DEBUG)
 
                         items.append(item)
+                    except StandardError:
+                        continue
 
-            # For each search mode sort all the items by seeders if available if available
-            items.sort(key=lambda tup: tup[3], reverse=True)
+            # For each search mode sort all the items by seeders if available
+            items.sort(key=lambda d: try_int(d.get('seeders', 0)), reverse=True)
 
             results += items
 
         return results
 
-    def seed_ratio(self):
-        return self.ratio
 
-
-class XthorCache(tvcache.TVCache):
-    def __init__(self, provider_obj):
-
-        tvcache.TVCache.__init__(self, provider_obj)
-
-        self.minTime = 30
-
-    def _getRSSData(self):
-        search_strings = {'RSS': ['']}
-        return {'entries': self.provider.search(search_strings)}
-
-
-provider = XthorProvider()
+provider = XThorProvider()

@@ -1,6 +1,6 @@
 # coding=UTF-8
 # Author: Dennis Lutter <lad1337@gmail.com>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -35,6 +35,9 @@ import sickbeard
 import sickbeard.search as search
 import sickbeard.common as common
 import tests.test_lib as test
+
+import six
+
 
 TESTS = {
     "Dexter": {"a": 1, "q": common.HD, "s": 5, "e": [7], "b": 'Dexter.S05E07.720p.BluRay.X264-REWARD', "i": ['Dexter.S05E07.720p.BluRay.X264-REWARD', 'Dexter.S05E07.720p.X264-REWARD']},
@@ -78,8 +81,8 @@ class SearchTest(test.SickbeardTestDBCase):
         _ = url, headers
         return _create_fake_xml(search_items)
 
-    @staticmethod
-    def _fake_is_active():
+    @property
+    def _fake_is_active(self):
         """
         Fake is active
         """
@@ -95,12 +98,12 @@ class SearchTest(test.SickbeardTestDBCase):
 
         for provider in sickbeard.providers.sortedProviderList():
             provider.get_url = self._fake_get_url
-            # provider.is_active = self._fake_is_active
+            provider.is_active = self._fake_is_active
 
         super(SearchTest, self).__init__(something)
 
 
-def test_generator(tvdb_id, show_name, cur_data, force_search):
+def generator(tvdb_id, show_name, cur_data, force_search):
     """
     Generate tests
 
@@ -136,23 +139,23 @@ def test_generator(tvdb_id, show_name, cur_data, force_search):
     return do_test
 
 if __name__ == '__main__':
-    print "=================="
-    print "STARTING - Snatch TESTS"
-    print "=================="
-    print "######################################################################"
+    print("==================")
+    print("STARTING - Snatch TESTS")
+    print("==================")
+    print("######################################################################")
     # create the test methods
     cur_tvdb_id = 1
     for forceSearch in (True, False):
-        for name, data in TESTS.items():
+        for name, data in six.iteritems(TESTS):
             if not data["a"]:
                 continue
             filename = name.replace(' ', '_')
             if forceSearch:
-                test_name = 'test_manual_%s_%s' % (filename, cur_tvdb_id)
+                test_name = 'test_manual_{0}_{1}'.format(filename, cur_tvdb_id)
             else:
-                test_name = 'test_%s_%s' % (filename, cur_tvdb_id)
+                test_name = 'test_{0}_{1}'.format(filename, cur_tvdb_id)
 
-            test = test_generator(cur_tvdb_id, name, data, forceSearch)
+            test = generator(cur_tvdb_id, name, data, forceSearch)
             setattr(SearchTest, test_name, test)
             cur_tvdb_id += 1
 

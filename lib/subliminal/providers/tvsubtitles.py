@@ -5,24 +5,28 @@ import re
 from zipfile import ZipFile
 
 from babelfish import Language, language_converters
+from guessit import guessit
 from requests import Session
 
-from . import ParserBeautifulSoup, Provider, get_version
-from .. import __version__
+from . import ParserBeautifulSoup, Provider
+from .. import __short_version__
 from ..cache import EPISODE_EXPIRATION_TIME, SHOW_EXPIRATION_TIME, region
 from ..exceptions import ProviderError
-from ..subtitle import Subtitle, fix_line_ending, guess_matches, guess_properties, sanitized_string_equal
+from ..score import get_equivalent_release_groups
+from ..subtitle import Subtitle, fix_line_ending, guess_matches
+from ..utils import sanitize, sanitize_release_group
 from ..video import Episode
 
 logger = logging.getLogger(__name__)
 
 language_converters.register('tvsubtitles = subliminal.converters.tvsubtitles:TVsubtitlesConverter')
 
-link_re = re.compile('^(?P<series>.+?)(?: \(?\d{4}\)?| \((?:US|UK)\))? \((?P<first_year>\d{4})-\d{4}\)$')
-episode_id_re = re.compile('^episode-\d+\.html$')
+link_re = re.compile(r'^(?P<series>.+?)(?: \(?\d{4}\)?| \((?:US|UK)\))? \((?P<first_year>\d{4})-\d{4}\)$')
+episode_id_re = re.compile(r'^episode-\d+\.html$')
 
 
 class TVsubtitlesSubtitle(Subtitle):
+    """TVsubtitles Subtitle."""
     provider_name = 'tvsubtitles'
 
     def __init__(self, language, page_link, subtitle_id, series, season, episode, year, rip, release):
@@ -39,11 +43,12 @@ class TVsubtitlesSubtitle(Subtitle):
     def id(self):
         return str(self.subtitle_id)
 
-    def get_matches(self, video, hearing_impaired=False):
-        matches = super(TVsubtitlesSubtitle, self).get_matches(video, hearing_impaired=hearing_impaired)
+    def get_matches(self, video):
+        matches = set()
 
         # series
-        if video.series and sanitized_string_equal(self.series, video.series):
+        if video.series and (sanitize(self.series) in (
+                sanitize(name) for name in [video.series] + video.alternative_series)):
             matches.add('series')
         # season
         if video.season and self.season == video.season:
@@ -52,31 +57,38 @@ class TVsubtitlesSubtitle(Subtitle):
         if video.episode and self.episode == video.episode:
             matches.add('episode')
         # year
-        if self.year == video.year:
+        if video.original_series and self.year is None or video.year and video.year == self.year:
             matches.add('year')
         # release_group
-        if video.release_group and self.release and video.release_group.lower() in self.release.lower():
+        if (video.release_group and self.release and
+                any(r in sanitize_release_group(self.release)
+                    for r in get_equivalent_release_groups(sanitize_release_group(video.release_group)))):
             matches.add('release_group')
         # other properties
         if self.release:
-            matches |= guess_matches(video, guess_properties(self.release), partial=True)
+            matches |= guess_matches(video, guessit(self.release, {'type': 'episode'}), partial=True)
         if self.rip:
-            matches |= guess_matches(video, guess_properties(self.rip), partial=True)
+            matches |= guess_matches(video, guessit(self.rip), partial=True)
 
         return matches
 
 
 class TVsubtitlesProvider(Provider):
+    """TVsubtitles Provider."""
     languages = {Language('por', 'BR')} | {Language(l) for l in [
         'ara', 'bul', 'ces', 'dan', 'deu', 'ell', 'eng', 'fin', 'fra', 'hun', 'ita', 'jpn', 'kor', 'nld', 'pol', 'por',
         'ron', 'rus', 'spa', 'swe', 'tur', 'ukr', 'zho'
     ]}
     video_types = (Episode,)
     server_url = 'http://www.tvsubtitles.net/'
+    subtitle_class = TVsubtitlesSubtitle
+
+    def __init__(self):
+        self.session = None
 
     def initialize(self):
         self.session = Session()
-        self.session.headers = {'User-Agent': 'Subliminal/%s' % get_version(__version__)}
+        self.session.headers['User-Agent'] = 'Subliminal/%s' % __short_version__
 
     def terminate(self):
         self.session.close()
@@ -87,9 +99,9 @@ class TVsubtitlesProvider(Provider):
 
         :param str series: series of the episode.
         :param year: year of the series, if any.
-        :type year: int or None
+        :type year: int
         :return: the show id, if any.
-        :rtype: int or None
+        :rtype: int
 
         """
         # make the search
@@ -151,13 +163,7 @@ class TVsubtitlesProvider(Provider):
 
         return episode_ids
 
-    def query(self, series, season, episode, year=None):
-        # search the show id
-        show_id = self.search_show_id(series, year)
-        if show_id is None:
-            logger.error('No show id found for %r (%r)', series, {'year': year})
-            return []
-
+    def query(self, show_id, series, season, episode, year=None):
         # get the episode ids
         episode_ids = self.get_episode_ids(show_id, season)
         if episode not in episode_ids:
@@ -177,9 +183,9 @@ class TVsubtitlesProvider(Provider):
             subtitle_id = int(row.parent['href'][10:-5])
             page_link = self.server_url + 'subtitle-%d.html' % subtitle_id
             rip = row.find('p', title='rip').text.strip() or None
-            release = row.find('p', title='release').text.strip() or None
+            release = row.find('h5').text.strip() or None
 
-            subtitle = TVsubtitlesSubtitle(language, page_link, subtitle_id, series, season, episode, year, rip,
+            subtitle = self.subtitle_class(language, page_link, subtitle_id, series, season, episode, year, rip,
                                            release)
             logger.debug('Found subtitle %s', subtitle)
             subtitles.append(subtitle)
@@ -187,7 +193,24 @@ class TVsubtitlesProvider(Provider):
         return subtitles
 
     def list_subtitles(self, video, languages):
-        return [s for s in self.query(video.series, video.season, video.episode, video.year) if s.language in languages]
+        # lookup show_id
+        titles = [video.series] + video.alternative_series
+        show_id = None
+        for title in titles:
+            show_id = self.search_show_id(title, video.year)
+            if show_id is not None:
+                break
+
+        # query for subtitles with the show_id
+        if show_id is not None:
+            subtitles = [s for s in self.query(show_id, title, video.season, video.episode, video.year)
+                         if s.language in languages and s.episode == video.episode]
+            if subtitles:
+                return subtitles
+        else:
+            logger.error('No show id found for %r (%r)', video.series, {'year': video.year})
+
+        return []
 
     def download_subtitle(self, subtitle):
         # download as a zip

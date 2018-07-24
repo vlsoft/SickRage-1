@@ -21,11 +21,14 @@
 Test GenericProvider
 """
 
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 
 import os
 import sys
 import unittest
+
+from mock import patch, MagicMock
+import six
 
 sys.path.insert(1, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../lib')))
 sys.path.insert(1, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
@@ -73,31 +76,31 @@ class GenericProviderTests(unittest.TestCase):
         }
 
         unicode_test_cases = {
-            u'': '',
-            u' ': '',
-            u'123': '123',
-            u' 123 ': '123',
-            u'12.3': '12_3',
-            u' 12.3 ': '12_3',
-            u'0': '0',
-            u' 0 ': '0',
-            u'-123': '_123',
-            u' -123 ': '_123',
-            u'-12.3': '_12_3',
-            u' -12.3 ': '_12_3',
-            u'abc': 'abc',
-            u' abc ': 'abc',
-            u'ABC': 'abc',
-            u' ABC ': 'abc',
-            u'.def': '_def',
-            u'g,hi': 'g_hi',
-            u'jk!l': 'jk_l',
-            u'mno?': 'mno_',
-            u'_pqr$': '_pqr_',
+            '': '',
+            ' ': '',
+            '123': '123',
+            ' 123 ': '123',
+            '12.3': '12_3',
+            ' 12.3 ': '12_3',
+            '0': '0',
+            ' 0 ': '0',
+            '-123': '_123',
+            ' -123 ': '_123',
+            '-12.3': '_12_3',
+            ' -12.3 ': '_12_3',
+            'abc': 'abc',
+            ' abc ': 'abc',
+            'ABC': 'abc',
+            ' ABC ': 'abc',
+            '.def': '_def',
+            'g,hi': 'g_hi',
+            'jk!l': 'jk_l',
+            'mno?': 'mno_',
+            '_pqr$': '_pqr_',
         }
 
         for test in test_cases, unicode_test_cases:
-            for (name, result) in test.iteritems():
+            for (name, result) in six.iteritems(test):
                 self.assertEqual(GenericProvider(name).get_id(), result)
 
     def test_image_name(self):
@@ -135,44 +138,44 @@ class GenericProviderTests(unittest.TestCase):
         }
 
         unicode_test_cases = {
-            u'': '.png',
-            u' ': '.png',
-            u'123': '123.png',
-            u' 123 ': '123.png',
-            u'12.3': '12_3.png',
-            u' 12.3 ': '12_3.png',
-            u'0': '0.png',
-            u' 0 ': '0.png',
-            u'-123': '_123.png',
-            u' -123 ': '_123.png',
-            u'-12.3': '_12_3.png',
-            u' -12.3 ': '_12_3.png',
-            u'abc': 'abc.png',
-            u' abc ': 'abc.png',
-            u'ABC': 'abc.png',
-            u' ABC ': 'abc.png',
-            u'.def': '_def.png',
-            u'g,hi': 'g_hi.png',
-            u'jk!l': 'jk_l.png',
-            u'mno?': 'mno_.png',
-            u'_pqr$': '_pqr_.png',
+            '': '.png',
+            ' ': '.png',
+            '123': '123.png',
+            ' 123 ': '123.png',
+            '12.3': '12_3.png',
+            ' 12.3 ': '12_3.png',
+            '0': '0.png',
+            ' 0 ': '0.png',
+            '-123': '_123.png',
+            ' -123 ': '_123.png',
+            '-12.3': '_12_3.png',
+            ' -12.3 ': '_12_3.png',
+            'abc': 'abc.png',
+            ' abc ': 'abc.png',
+            'ABC': 'abc.png',
+            ' ABC ': 'abc.png',
+            '.def': '_def.png',
+            'g,hi': 'g_hi.png',
+            'jk!l': 'jk_l.png',
+            'mno?': 'mno_.png',
+            '_pqr$': '_pqr_.png',
         }
 
         for test in test_cases, unicode_test_cases:
-            for (name, result) in test.iteritems():
+            for (name, result) in six.iteritems(test):
                 self.assertEqual(GenericProvider(name).image_name(), result)
 
     def test_is_active(self):
         """
         Test is_active
         """
-        self.assertFalse(GenericProvider('Test Provider').is_active())
+        self.assertFalse(GenericProvider('Test Provider').is_active)
 
     def test_is_enabled(self):
         """
         Test is_enabled
         """
-        self.assertFalse(GenericProvider('Test Provider').is_enabled())
+        self.assertFalse(GenericProvider('Test Provider').is_enabled)
 
     def test_make_id(self):
         """
@@ -209,31 +212,31 @@ class GenericProviderTests(unittest.TestCase):
         }
 
         unicode_test_cases = {
-            u'': '',
-            u' ': '',
-            u'123': '123',
-            u' 123 ': '123',
-            u'12.3': '12_3',
-            u' 12.3 ': '12_3',
-            u'0': '0',
-            u' 0 ': '0',
-            u'-123': '_123',
-            u' -123 ': '_123',
-            u'-12.3': '_12_3',
-            u' -12.3 ': '_12_3',
-            u'abc': 'abc',
-            u' abc ': 'abc',
-            u'ABC': 'abc',
-            u' ABC ': 'abc',
-            u'.def': '_def',
-            u'g,hi': 'g_hi',
-            u'jk!l': 'jk_l',
-            u'mno?': 'mno_',
-            u'_pqr$': '_pqr_',
+            '': '',
+            ' ': '',
+            '123': '123',
+            ' 123 ': '123',
+            '12.3': '12_3',
+            ' 12.3 ': '12_3',
+            '0': '0',
+            ' 0 ': '0',
+            '-123': '_123',
+            ' -123 ': '_123',
+            '-12.3': '_12_3',
+            ' -12.3 ': '_12_3',
+            'abc': 'abc',
+            ' abc ': 'abc',
+            'ABC': 'abc',
+            ' ABC ': 'abc',
+            '.def': '_def',
+            'g,hi': 'g_hi',
+            'jk!l': 'jk_l',
+            'mno?': 'mno_',
+            '_pqr$': '_pqr_',
         }
 
         for test in test_cases, unicode_test_cases:
-            for (name, result) in test.iteritems():
+            for (name, result) in six.iteritems(test):
                 self.assertEqual(GenericProvider.make_id(name), result)
 
     def test_seed_ratio(self):
@@ -272,15 +275,15 @@ class GenericProviderTests(unittest.TestCase):
         }
 
         unicode_test_cases = {
-            u'': [],
-            u'123': [],
-            u'12.3': [],
-            u'-123': [],
-            u'-12.3': [],
+            '': [],
+            '123': [],
+            '12.3': [],
+            '-123': [],
+            '-12.3': [],
         }
 
         for test in test_cases, unicode_test_cases:
-            for (search_params, result) in test.iteritems():
+            for (search_params, result) in six.iteritems(test):
                 self.assertEqual(GenericProvider('Test Provider').search(search_params), result)
 
     def test__get_size(self):
@@ -308,8 +311,8 @@ class GenericProviderTests(unittest.TestCase):
         ]
 
         unicode_items_list = [
-            {'link': u'', 'title': u''},
-            {'link': u'http://www.google.com/&amp;foo=bar%26tr%3Dtest', 'title': u'Some Title'}
+            {'link': '', 'title': ''},
+            {'link': 'http://www.google.com/&amp;foo=bar%26tr%3Dtest', 'title': 'Some Title'}
         ]
         unicode_results_list = [
             ('', ''), ('Some.Title', 'http://www.google.com/&foo=bar&tr=test')
@@ -317,12 +320,12 @@ class GenericProviderTests(unittest.TestCase):
 
         self.assertEqual(
             len(items_list), len(results_list),
-            'Number of parameters (%d) and results (%d) does not match' % (len(items_list), len(results_list))
+            'Number of parameters ({0:d}) and results ({1:d}) does not match'.format(len(items_list), len(results_list))
         )
 
         self.assertEqual(
             len(unicode_items_list), len(unicode_results_list),
-            'Number of parameters (%d) and results (%d) does not match' % (
+            'Number of parameters ({0:d}) and results ({1:d}) does not match'.format(
                 len(unicode_items_list), len(unicode_results_list))
         )
 
@@ -339,8 +342,55 @@ class GenericProviderTests(unittest.TestCase):
         self.assertTrue(GenericProvider('Test Provider')._verify_download())
 
 
+    @patch('sickrage.providers.GenericProvider.download_file')
+    @patch('sickrage.providers.GenericProvider.remove_file_failed')
+    def test_download_file(self, remove_file_mock, df_mock):
+        """
+        Test download_result
+        """
+        domain = 'domain'
+        filename = 'TestFilename.nzb'
+        urls = [
+            'http://{0}/{1}.torrentNO_DOWNLOAD_NAME'.format(domain, filename),
+            'http://{0}/{1}.torrent'.format(domain, filename),
+        ]
+
+        # Test the login() check
+        gp1 = GenericProvider('Test Provider 1')
+        login_mock = MagicMock()
+        login_mock.return_value = False
+        with patch.object(gp1, 'login', login_mock):
+            self.assertFalse(gp1.download_result('result 1'))
+            self.assertTrue(login_mock.called)
+
+        # Test the _make_url call
+        gp2 = GenericProvider('Test Provider 2')
+        make_url_mock = MagicMock()
+        make_url_mock.return_value = (urls, filename)
+        df_mock.return_value = True
+        with patch.object(gp2, '_make_url', make_url_mock):
+            resp = gp2.download_result('result 2')
+            self.assertTrue(resp)
+            self.assertTrue('Referer' in gp2.headers)
+            self.assertTrue(domain in gp2.headers['Referer'])
+            self.assertTrue(df_mock.called)
+
+        # Test the remove_file_failed path
+        gp3 = GenericProvider('Test Provider 3')
+        make_url_mock = MagicMock()
+        make_url_mock.return_value = (urls, filename)
+        verify_download_mock = MagicMock()
+        verify_download_mock.return_value = False
+        df_mock.return_value = True
+        with patch.object(gp3, '_make_url', make_url_mock):
+            with patch.object(gp3, '_verify_download', verify_download_mock):
+                resp = gp3.download_result('result 3')
+                self.assertFalse(resp)
+                self.assertTrue(remove_file_mock.called)
+
+
 if __name__ == '__main__':
-    print('=====> Testing %s' % __file__)
+    print('=====> Testing {0}'.format(__file__))
 
     SUITE = unittest.TestLoader().loadTestsFromTestCase(GenericProviderTests)
     unittest.TextTestRunner(verbosity=2).run(SUITE)

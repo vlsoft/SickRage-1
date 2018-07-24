@@ -9,17 +9,6 @@ from ..video import Episode, Movie
 logger = logging.getLogger(__name__)
 
 
-def get_version(version):
-    """Put the `version` in the major.minor form.
-
-    :param str version: the full version.
-    :return: the major.minor form of the `version`.
-    :rtype: str
-
-    """
-    return '.'.join(version.split('.')[:2])
-
-
 class TimeoutSafeTransport(SafeTransport):
     """Timeout support for ``xmlrpc.client.SafeTransport``."""
     def __init__(self, timeout, *args, **kwargs):
@@ -37,7 +26,7 @@ class ParserBeautifulSoup(BeautifulSoup):
     """A ``bs4.BeautifulSoup`` that picks the first parser available in `parsers`.
 
     :param markup: markup for the ``bs4.BeautifulSoup``.
-    :param list parsers: parser names, in order of preference
+    :param list parsers: parser names, in order of preference.
 
     """
     def __init__(self, markup, parsers, **kwargs):
@@ -79,6 +68,9 @@ class Provider(object):
     #: Required hash, if any
     required_hash = None
 
+    #: Subtitle class to use
+    subtitle_class = None
+
     def __enter__(self):
         self.initialize()
         return self
@@ -93,7 +85,7 @@ class Provider(object):
         or login operations.
 
         .. note::
-            This is called automatically when entering the :keyword:`with` statement
+            This is called automatically when entering the `with` statement
 
         """
         raise NotImplementedError
@@ -104,7 +96,7 @@ class Provider(object):
         Must be called when done with the provider. This is the place for network shutdown or logout operations.
 
         .. note::
-            This is called automatically when exiting the :keyword:`with` statement
+            This is called automatically when exiting the `with` statement
 
         """
         raise NotImplementedError

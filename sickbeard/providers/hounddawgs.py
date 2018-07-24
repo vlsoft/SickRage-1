@@ -1,6 +1,7 @@
 # coding=utf-8
 # Author: Idan Gutman
-# URL: http://code.google.com/p/sickbeard/
+#
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -17,12 +18,16 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import re
 import traceback
-from sickbeard import logger
-from sickbeard import tvcache
+
+from requests.utils import dict_from_cookiejar
+
+from sickbeard import logger, tvcache
 from sickbeard.bs4_parser import BS4Parser
-from sickrage.helper.common import try_int, convert_size
+from sickrage.helper.common import convert_size, try_int
 from sickrage.providers.torrent.TorrentProvider import TorrentProvider
 
 
@@ -34,7 +39,6 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
 
         self.username = None
         self.password = None
-        self.ratio = None
         self.minseed = None
         self.minleech = None
         self.freeleech = None
@@ -64,9 +68,11 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
             "searchtags": ''
         }
 
-        self.cache = HoundDawgsCache(self)
+        self.cache = tvcache.TVCache(self)
 
     def login(self):
+        if any(dict_from_cookiejar(self.session.cookies).values()):
+            return True
 
         login_params = {
             'username': self.username,
@@ -75,16 +81,16 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
             'login': 'Login'
         }
 
-        self.get_url(self.urls['base_url'], timeout=30)
-        response = self.get_url(self.urls['login'], post_data=login_params, timeout=30)
+        self.get_url(self.urls['base_url'], returns='text')
+        response = self.get_url(self.urls['login'], post_data=login_params, returns='text')
         if not response:
-            logger.log(u"Unable to connect to provider", logger.WARNING)
+            logger.log("Unable to connect to provider", logger.WARNING)
             return False
 
         if re.search('Dit brugernavn eller kodeord er forkert.', response) \
                 or re.search('<title>Login :: HoundDawgs</title>', response) \
                 or re.search('Dine cookies er ikke aktiveret.', response):
-            logger.log(u"Invalid username or password. Check your settings", logger.WARNING)
+            logger.log("Invalid username or password. Check your settings", logger.WARNING)
             return False
 
         return True
@@ -96,17 +102,18 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
 
         for mode in search_strings:
             items = []
-            logger.log(u"Search Mode: %s" % mode, logger.DEBUG)
+            logger.log("Search Mode: {0}".format(mode), logger.DEBUG)
             for search_string in search_strings[mode]:
 
                 if mode != 'RSS':
-                    logger.log(u"Search string: %s " % search_string, logger.DEBUG)
+                    logger.log("Search string: {0}".format
+                               (search_string.decode("utf-8")), logger.DEBUG)
 
                 self.search_params['searchstr'] = search_string
 
-                data = self.get_url(self.urls['search'], params=self.search_params)
+                data = self.get_url(self.urls['search'], params=self.search_params, returns='text')
                 if not data:
-                    logger.log(u'URL did not return data', logger.DEBUG)
+                    logger.log('URL did not return data', logger.DEBUG)
                     continue
 
                 strTableStart = "<table class=\"torrent_table"
@@ -120,7 +127,7 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
                         result_table = html.find('table', {'id': 'torrent_table'})
 
                         if not result_table:
-                            logger.log(u"Data returned from provider does not contain any torrents", logger.DEBUG)
+                            logger.log("Data returned from provider does not contain any torrents", logger.DEBUG)
                             continue
 
                         result_tbody = result_table.find('tbody')
@@ -129,16 +136,16 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
 
                         for result in entries[1:]:
 
-                            torrent = result.find_all('td')
+                            torrent = result('td')
                             if len(torrent) <= 1:
                                 break
 
-                            allAs = (torrent[1]).find_all('a')
+                            allAs = (torrent[1])('a')
 
                             try:
                                 notinternal = result.find('img', src='/static//common/user_upload.png')
                                 if self.ranked and notinternal:
-                                    logger.log(u"Found a user uploaded release, Ignoring it..", logger.DEBUG)
+                                    logger.log("Found a user uploaded release, Ignoring it..", logger.DEBUG)
                                     continue
                                 freeleech = result.find('img', src='/static//common/browse/freeleech.png')
                                 if self.freeleech and not freeleech:
@@ -148,8 +155,8 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
                                 torrent_size = result.find("td", class_="nobr").find_next_sibling("td").string
                                 if torrent_size:
                                     size = convert_size(torrent_size) or -1
-                                seeders = try_int((result.findAll('td')[6]).text)
-                                leechers = try_int((result.findAll('td')[7]).text)
+                                seeders = try_int((result('td')[6]).text.replace(',', ''))
+                                leechers = try_int((result('td')[7]).text.replace(',', ''))
 
                             except (AttributeError, TypeError):
                                 continue
@@ -160,40 +167,25 @@ class HoundDawgsProvider(TorrentProvider):  # pylint: disable=too-many-instance-
                             # Filter unseeded torrent
                             if seeders < self.minseed or leechers < self.minleech:
                                 if mode != 'RSS':
-                                    logger.log(u"Discarding torrent because it doesn't meet the minimum seeders or leechers: {0} (S:{1} L:{2})".format(title, seeders, leechers), logger.DEBUG)
+                                    logger.log("Discarding torrent because it doesn't meet the minimum seeders or leechers: {0} (S:{1} L:{2})".format
+                                               (title, seeders, leechers), logger.DEBUG)
                                 continue
 
-                            item = title, download_url, size, seeders, leechers
+                            item = {'title': title, 'link': download_url, 'size': size, 'seeders': seeders, 'leechers': leechers, 'hash': ''}
                             if mode != 'RSS':
-                                logger.log(u"Found result: %s " % title, logger.DEBUG)
+                                logger.log("Found result: {0} with {1} seeders and {2} leechers".format(title, seeders, leechers), logger.DEBUG)
 
                             items.append(item)
 
                 except Exception:
-                    logger.log(u"Failed parsing provider. Traceback: %s" % traceback.format_exc(), logger.ERROR)
+                    logger.log("Failed parsing provider. Traceback: {0}".format(traceback.format_exc()), logger.ERROR)
 
             # For each search mode sort all the items by seeders if available
-            items.sort(key=lambda tup: tup[3], reverse=True)
+            items.sort(key=lambda d: try_int(d.get('seeders', 0)), reverse=True)
 
             results += items
 
         return results
-
-    def seed_ratio(self):
-        return self.ratio
-
-
-class HoundDawgsCache(tvcache.TVCache):
-    def __init__(self, provider_obj):
-
-        tvcache.TVCache.__init__(self, provider_obj)
-
-        # only poll HoundDawgs every 20 minutes max
-        self.minTime = 20
-
-    def _getRSSData(self):
-        search_strings = {'RSS': ['']}
-        return {'entries': self.provider.search(search_strings)}
 
 
 provider = HoundDawgsProvider()

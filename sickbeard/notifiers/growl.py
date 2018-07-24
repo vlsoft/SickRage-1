@@ -1,7 +1,7 @@
 # coding=utf-8
 
 # Author: Nic Wolfe <nic@wolfeden.ca>
-# URL: http://code.google.com/p/sickbeard/
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -18,16 +18,18 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import socket
 
-import sickbeard
-from sickbeard import logger, common
-from sickrage.helper.exceptions import ex
 from libgrowl import gntp
 
+import sickbeard
+from sickbeard import common, logger
+from sickrage.helper.exceptions import ex
 
-class GrowlNotifier(object):
-    sr_logo_url = 'https://raw.githubusercontent.com/SickRage/SickRage/master/gui/slick/images/sickrage-shark-mascot.png'
+
+class Notifier(object):
 
     def test_notify(self, host, password):
         self._sendRegistration(host, password, 'Test')
@@ -47,16 +49,14 @@ class GrowlNotifier(object):
             self._sendGrowl(common.notifyStrings[common.NOTIFY_SUBTITLE_DOWNLOAD], ep_name + ": " + lang)
 
     def notify_git_update(self, new_version="??"):
-        if sickbeard.USE_GROWL:
-            update_text = common.notifyStrings[common.NOTIFY_GIT_UPDATE_TEXT]
-            title = common.notifyStrings[common.NOTIFY_GIT_UPDATE]
-            self._sendGrowl(title, update_text + new_version)
+        update_text = common.notifyStrings[common.NOTIFY_GIT_UPDATE_TEXT]
+        title = common.notifyStrings[common.NOTIFY_GIT_UPDATE]
+        self._sendGrowl(title, update_text + new_version)
 
     def notify_login(self, ipaddress=""):
-        if sickbeard.USE_GROWL:
-            update_text = common.notifyStrings[common.NOTIFY_LOGIN_TEXT]
-            title = common.notifyStrings[common.NOTIFY_LOGIN]
-            self._sendGrowl(title, update_text.format(ipaddress))
+        update_text = common.notifyStrings[common.NOTIFY_LOGIN_TEXT]
+        title = common.notifyStrings[common.NOTIFY_LOGIN]
+        self._sendGrowl(title, update_text.format(ipaddress))
 
     def _send_growl(self, options, message=None):
 
@@ -77,7 +77,7 @@ class GrowlNotifier(object):
         if options['priority']:
             notice.add_header('Notification-Priority', options['priority'])
         if options['icon']:
-            notice.add_header('Notification-Icon', self.sr_logo_url)
+            notice.add_header('Notification-Icon', sickbeard.LOGO_URL)
 
         if message:
             notice.add_header('Notification-Text', message)
@@ -85,9 +85,10 @@ class GrowlNotifier(object):
         response = self._send(options['host'], options['port'], notice.encode(), options['debug'])
         return True if isinstance(response, gntp.GNTPOK) else False
 
-    def _send(self, host, port, data, debug=False):
+    @staticmethod
+    def _send(host, port, data, debug=False):
         if debug:
-            print '<Sending>\n', data, '\n</Sending>'
+            print('<Sending>\n', data, '\n</Sending>')
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((host, port))
@@ -96,7 +97,7 @@ class GrowlNotifier(object):
         s.close()
 
         if debug:
-            print '<Received>\n', response, '\n</Received>'
+            print('<Received>\n', response, '\n</Received>')
 
         return response
 
@@ -139,7 +140,7 @@ class GrowlNotifier(object):
         for pc in growlHosts:
             opts['host'] = pc[0]
             opts['port'] = pc[1]
-            logger.log(u"GROWL: Sending message '" + message + "' to " + opts['host'] + ":" + str(opts['port']), logger.DEBUG)
+            logger.log("GROWL: Sending message '" + message + "' to " + opts['host'] + ":" + str(opts['port']), logger.DEBUG)
             try:
                 if self._send_growl(opts, message):
                     return True
@@ -149,7 +150,7 @@ class GrowlNotifier(object):
                     else:
                         return False
             except Exception as e:
-                logger.log(u"GROWL: Unable to send growl to " + opts['host'] + ":" + str(opts['port']) + " - " + ex(e), logger.WARNING)
+                logger.log("GROWL: Unable to send growl to " + opts['host'] + ":" + str(opts['port']) + " - " + ex(e), logger.WARNING)
                 return False
 
     def _sendRegistration(self, host=None, password=None, name='SickRage Notification'):
@@ -179,7 +180,7 @@ class GrowlNotifier(object):
         # Send Registration
         register = gntp.GNTPRegister()
         register.add_header('Application-Name', opts['app'])
-        register.add_header('Application-Icon', self.sr_logo_url)
+        register.add_header('Application-Icon', sickbeard.LOGO_URL)
 
         register.add_notification('Test', True)
         register.add_notification(common.notifyStrings[common.NOTIFY_SNATCH], True)
@@ -192,8 +193,5 @@ class GrowlNotifier(object):
         try:
             return self._send(opts['host'], opts['port'], register.encode(), opts['debug'])
         except Exception as e:
-            logger.log(u"GROWL: Unable to send growl to " + opts['host'] + ":" + str(opts['port']) + " - " + ex(e), logger.WARNING)
+            logger.log("GROWL: Unable to send growl to " + opts['host'] + ":" + str(opts['port']) + " - " + ex(e), logger.WARNING)
             return False
-
-
-notifier = GrowlNotifier

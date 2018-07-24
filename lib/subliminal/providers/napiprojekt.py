@@ -4,8 +4,8 @@ import logging
 from babelfish import Language
 from requests import Session
 
-from . import Provider, get_version
-from .. import __version__
+from . import Provider
+from .. import __short_version__
 from ..subtitle import Subtitle
 
 logger = logging.getLogger(__name__)
@@ -36,18 +36,20 @@ def get_subhash(hash):
 
 
 class NapiProjektSubtitle(Subtitle):
+    """NapiProjekt Subtitle."""
     provider_name = 'napiprojekt'
 
     def __init__(self, language, hash):
         super(NapiProjektSubtitle, self).__init__(language)
         self.hash = hash
+        self.content = None
 
     @property
     def id(self):
         return self.hash
 
-    def get_matches(self, video, hearing_impaired=False):
-        matches = super(NapiProjektSubtitle, self).get_matches(video, hearing_impaired=hearing_impaired)
+    def get_matches(self, video):
+        matches = set()
 
         # hash
         if 'napiprojekt' in video.hashes and video.hashes['napiprojekt'] == self.hash:
@@ -57,12 +59,18 @@ class NapiProjektSubtitle(Subtitle):
 
 
 class NapiProjektProvider(Provider):
+    """NapiProjekt Provider."""
     languages = {Language.fromalpha2(l) for l in ['pl']}
     required_hash = 'napiprojekt'
     server_url = 'http://napiprojekt.pl/unit_napisy/dl.php'
+    subtitle_class = NapiProjektSubtitle
+
+    def __init__(self):
+        self.session = None
 
     def initialize(self):
-        self.session.headers = {'User-Agent': 'Subliminal/%s' % get_version(__version__)}
+        self.session = Session()
+        self.session.headers['User-Agent'] = 'Subliminal/%s' % __short_version__
 
     def terminate(self):
         self.session.close()
@@ -78,16 +86,16 @@ class NapiProjektProvider(Provider):
             'f': hash,
             't': get_subhash(hash)}
         logger.info('Searching subtitle %r', params)
-        response = self.session.get(self.server_url, params=params, timeout=10)
-        response.raise_for_status()
+        r = self.session.get(self.server_url, params=params, timeout=10)
+        r.raise_for_status()
 
         # handle subtitles not found and errors
-        if response.content[:4] == b'NPc0':
+        if r.content[:4] == b'NPc0':
             logger.debug('No subtitles found')
             return None
 
-        subtitle = NapiProjektSubtitle(language, hash)
-        subtitle.content = response.content
+        subtitle = self.subtitle_class(language, hash)
+        subtitle.content = r.content
         logger.debug('Found subtitle %r', subtitle)
 
         return subtitle

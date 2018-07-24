@@ -1,9 +1,13 @@
 # coding=utf-8
-import re
+
+from __future__ import print_function, unicode_literals
+
 import os
-import requests
-from bs4 import BeautifulSoup
+import posixpath
+import re
 from datetime import date
+
+from bs4 import BeautifulSoup
 
 import sickbeard
 from sickbeard import helpers
@@ -21,66 +25,54 @@ class imdbPopular(object):
             'at': 0,
             'sort': 'moviemeter',
             'title_type': 'tv_series',
-            'year': '%s,%s' % (date.today().year - 1, date.today().year + 1)
+            'year': '{0},{1}'.format(date.today().year - 1, date.today().year + 1)
         }
 
-        self.session = requests.Session()
+        self.session = helpers.make_session()
 
     def fetch_popular_shows(self):
         """Get popular show information from IMDB"""
 
         popular_shows = []
 
-        data = helpers.getURL(self.url, session=self.session, params=self.params, headers={'Referer': 'http://akas.imdb.com/'})
+        data = helpers.getURL(self.url, session=self.session, params=self.params, headers={'Referer': 'http://akas.imdb.com/'}, returns='text')
         if not data:
             return None
 
         soup = BeautifulSoup(data, 'html5lib')
-        results = soup.find("table", {"class": "results"})
-        rows = results.find_all("tr")
+        results = soup.find_all("div", {"class": "lister-item"})
 
-        for row in rows:
+        for row in results:
             show = {}
-            image_td = row.find("td", {"class": "image"})
-
-            if image_td:
-                image = image_td.find("img")
-                show['image_url_large'] = self.change_size(image['src'], 3)
-                show['image_path'] = ek(os.path.join, 'images', 'imdb_popular', ek(os.path.basename, show['image_url_large']))
-
+            image_div = row.find("div", {"class": "lister-item-image"})
+            if image_div:
+                image = image_div.find("img")
+                show['image_url_large'] = self.change_size(image['loadlate'], 3)
+                show['imdb_tt'] = image['data-tconst']
+                show['image_path'] = ek(posixpath.join, 'images', 'imdb_popular', ek(os.path.basename, show['image_url_large']))
                 self.cache_image(show['image_url_large'])
 
-            td = row.find("td", {"class": "title"})
+            content = row.find("div", {"class": "lister-item-content"})
+            if content:
+                header = row.find("h3", {"class": "lister-item-header"})
+                if header:
+                    a_tag = header.find("a")
+                    if a_tag:
+                        show['name'] = a_tag.get_text(strip=True)
+                        show['imdb_url'] = "http://www.imdb.com" + a_tag["href"]
+                        show['year'] = header.find("span", {"class": "lister-item-year"}).contents[0].split(" ")[0][1:].strip("-")
 
-            if td:
-                show['name'] = td.find("a").contents[0]
-                show['imdb_url'] = "http://www.imdb.com" + td.find("a")["href"]
-                show['imdb_tt'] = show['imdb_url'][-10:][0:9]
-                show['year'] = td.find("span", {"class": "year_type"}).contents[0].split(" ")[0][1:]
+                imdb_rating = row.find("div", {"class": "ratings-imdb-rating"})
+                show['rating'] = imdb_rating['data-value'] if imdb_rating else None
 
-                rating_all = td.find("div", {"class": "user_rating"})
-                if rating_all:
-                    rating_string = rating_all.find("div", {"class": "rating rating-list"})
-                    if rating_string:
-                        rating_string = rating_string['title']
+                votes = row.find("span", {"name": "nv"})
+                show['votes'] = votes['data-value'] if votes else None
 
-                        match = re.search(r".* (.*)\/10.*\((.*)\).*", rating_string)
-                        if match:
-                            matches = match.groups()
-                            show['rating'] = matches[0]
-                            show['votes'] = matches[1]
-                        else:
-                            show['rating'] = None
-                            show['votes'] = None
+                outline = content.find_all("p", {"class": "text-muted"})
+                if outline and len(outline) >= 2:
+                    show['outline'] = outline[1].contents[0].strip("\"")
                 else:
-                    show['rating'] = None
-                    show['votes'] = None
-
-                outline = td.find("span", {"class": "outline"})
-                if outline:
-                    show['outline'] = outline.contents[0]
-                else:
-                    show['outline'] = u''
+                    show['outline'] = ''
 
                 popular_shows.append(show)
 
@@ -88,7 +80,7 @@ class imdbPopular(object):
 
     @staticmethod
     def change_size(image_url, factor=3):
-        match = re.search("^(.*)V1._(.{2})(.*?)_(.{2})(.*?),(.*?),(.*?),(.*?)_.jpg$", image_url)
+        match = re.search("^(.*)V1_(.{2})(.*?)_(.{2})(.*?),(.*?),(.*?),(.\d?)_(.*?)_.jpg$", image_url)
 
         if match:
             matches = match.groups()
@@ -100,7 +92,7 @@ class imdbPopular(object):
             matches[6] = int(matches[6]) * factor
             matches[7] = int(matches[7]) * factor
 
-            return "%sV1._%s%s_%s%s,%s,%s,%s_.jpg" % (matches[0], matches[1], matches[2], matches[3], matches[4],
+            return "{0}V1._{1}{2}_{3}{4},{5},{6},{7}_.jpg".format(matches[0], matches[1], matches[2], matches[3], matches[4],
                                                       matches[5], matches[6], matches[7])
         else:
             return image_url

@@ -1,6 +1,7 @@
 # coding=utf-8
-# Author: jkaberg <joel.kaberg@gmail.com>, based on fuzemans work (https://github.com/RuudBurger/CouchPotatoServer/blob/develop/couchpotato/core/downloaders/rtorrent/main.py)
-# URL: http://code.google.com/p/sickbeard/
+# Author: jkaberg <joel.kaberg@gmail.com>
+#
+# URL: https://sickrage.github.io
 #
 # This file is part of SickRage.
 #
@@ -17,15 +18,22 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
-import traceback
+
+# pylint: disable=line-too-long
+
+# based on fuzemans work
+# https://github.com/RuudBurger/CouchPotatoServer/blob/develop/couchpotato/core/downloaders/rtorrent/main.py
+
+from __future__ import print_function, unicode_literals
+
+from rtorrent import RTorrent  # pylint: disable=import-error
 
 import sickbeard
-from sickbeard import logger
+from sickbeard import ex, logger
 from sickbeard.clients.generic import GenericClient
-from rtorrent import RTorrent
 
 
-class rTorrentAPI(GenericClient):
+class rTorrentAPI(GenericClient):  # pylint: disable=invalid-name
     def __init__(self, host=None, username=None, password=None):
         super(rTorrentAPI, self).__init__('rTorrent', host, username, password)
 
@@ -77,13 +85,15 @@ class rTorrentAPI(GenericClient):
             if sickbeard.TORRENT_PATH:
                 torrent.set_directory(sickbeard.TORRENT_PATH)
 
-            # Start torrent
-            torrent.start()
+            if not sickbeard.TORRENT_PAUSED:
+                # Start torrent
+                torrent.start()
 
             return True
 
-        except Exception:
-            logger.log(traceback.format_exc(), logger.DEBUG)
+        except Exception as error:  # pylint: disable=broad-except
+            logger.log('Error while sending torrent: {error}'.format  # pylint: disable=no-member
+                       (error=ex(error)), logger.WARNING)
             return False
 
     def _add_torrent_file(self, result):
@@ -119,13 +129,15 @@ class rTorrentAPI(GenericClient):
             # Set Ratio Group
             # torrent.set_visible(group_name)
 
-            # Start torrent
-            torrent.start()
+            if not sickbeard.TORRENT_PAUSED:
+                # Start torrent
+                torrent.start()
 
             return True
 
-        except Exception:
-            logger.log(traceback.format_exc(), logger.DEBUG)
+        except Exception as error:  # pylint: disable=broad-except
+            logger.log('Error while sending torrent: {error}'.format  # pylint: disable=no-member
+                       (error=ex(error)), logger.WARNING)
             return False
 
     def _set_torrent_ratio(self, name):
@@ -162,6 +174,8 @@ class rTorrentAPI(GenericClient):
         # except:
         # return False
 
+        _ = name
+
         return True
 
     def testAuthentication(self):
@@ -171,9 +185,9 @@ class rTorrentAPI(GenericClient):
             if self.auth is not None:
                 return True, 'Success: Connected and Authenticated'
             else:
-                return False, 'Error: Unable to get ' + self.name + ' Authentication, check your config!'
-        except Exception:
-            return False, 'Error: Unable to connect to ' + self.name
+                return False, 'Error: Unable to get {name} Authentication, check your config!'.format(name=self.name)
+        except Exception:  # pylint: disable=broad-except
+            return False, 'Error: Unable to connect to {name}'.format(name=self.name)
 
 
-api = rTorrentAPI()
+api = rTorrentAPI()  # pylint: disable=invalid-name

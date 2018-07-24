@@ -1,2 +1,2 @@
 # coding=utf-8
-__all__ = []
+from __future__ import unicode_literals

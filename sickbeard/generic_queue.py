@@ -18,6 +18,8 @@
 # You should have received a copy of the GNU General Public License
 # along with SickRage. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import print_function, unicode_literals
+
 import datetime
 import threading
 
@@ -33,6 +35,8 @@ class QueuePriorities(object):
 class GenericQueue(object):
     def __init__(self):
 
+        self.amActive = False
+
         self.currentItem = None
 
         self.queue = []
@@ -45,12 +49,12 @@ class GenericQueue(object):
 
     def pause(self):
         """Pauses this queue"""
-        logger.log(u"Pausing queue")
+        logger.log("Pausing queue")
         self.min_priority = 999999999999
 
     def unpause(self):
         """Unpauses this queue"""
-        logger.log(u"Unpausing queue")
+        logger.log("Unpausing queue")
         self.min_priority = 0
 
     def add_item(self, item):
@@ -72,6 +76,8 @@ class GenericQueue(object):
 
         :param force: Force queue processing (currently not implemented)
         """
+        self.amActive = True
+
         with self.lock:
             # only start a new task if one isn't already going
             if self.currentItem is None or not self.currentItem.isAlive():
@@ -82,7 +88,7 @@ class GenericQueue(object):
                     self.currentItem = None
 
                 # if there's something in the queue then run it in a thread and take it out of the queue
-                if len(self.queue) > 0:
+                if self.queue:
 
                     # sort by priority
                     def sorter(x, y):
